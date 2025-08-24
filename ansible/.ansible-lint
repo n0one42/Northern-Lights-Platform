@@ -1,0 +1,53 @@
+# ansible/.ansible-lint
+# This file is the single source of truth for our project's Ansible code quality standards.
+# It ensures that linting is consistent, relevant, and free of unnecessary noise.
+
+# Use the "production" profile for a stricter, more modern set of default rules.
+# It's a great starting point for new projects.
+profile: production
+
+# These are rules that we want to be aware of but don't consider critical enough to
+# fail a build. They will be displayed as warnings instead of errors.
+warn_list:
+  - fqcn-builtins      # Warns if you use `command:` instead of `ansible.builtin.command:`. Good practice, but not a deal-breaker.
+  - no-handler         # Some simple roles genuinely don't need handlers.
+  - unnamed-task       # You should always name your tasks, but a warning is a good reminder.
+
+# These are rules that we have consciously decided to disable for this project.
+# They are often stylistic or conflict with our chosen patterns.
+skip_list:
+  # - var-naming         # This rule is often too restrictive and produces many false positives with complex Jinja2 variables.
+  # - experimental       # As a homelab, we want the flexibility to use experimental features without linting errors.
+  - placeholderifempty
+  - meta-incorrect
+  # - name[template]
+  # - var-naming[no-role-prefix]
+
+# A list of file paths to completely ignore during linting.
+# Crucial for preventing the linter from checking irrelevant files.
+exclude_paths:
+  - .venv/             # Never lint the virtual environment directory.
+  # - inventories/       # Inventories often contain structures that trigger false positives. We manage their quality manually.
+  - '**/*.j2'
+  - '**/meta/*'
+  - '**/tests/*'
+
+# This allows us to teach the linter about our custom file types.
+kinds:
+  - yml: "**/*.yml.j2"  # Treat Jinja2 template files as YAML so they can be linted.
+
+# Tell the linter to trust that certain modules exist, even if they are from custom
+# collections or it can't find them locally. This is essential for avoiding errors
+# with collections like `community.general`.
+mock_modules:
+  - community.general.proxmox_vm
+  - community.docker.docker_compose_v2
+
+# Increase the verbosity to get more detailed output on errors.
+verbosity: 1
+
+# Run in offline mode to prevent ansible-galaxy lookups and improve performance,
+# especially in CI/CD environments.
+offline: true
+
+# # https://ansible.readthedocs.io/projects/lint/configuring/#ansible-lint-configuration

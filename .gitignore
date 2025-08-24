@@ -403,15 +403,19 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# VS Code files for those working on multiple tools
-## Visual Studio Code ##
-# .vscode/
-# *.code-workspace
+# VS Code files
+# Ignore all files within the .vscode directory...
+.vscode/*
 
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+# ...but explicitly DO NOT ignore these specific files.
+# This pattern is more reliable than ignoring the whole directory and then re-adding.
+# !/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/extensions.json
+
+# Also ignore the workspace files, as they are often user-specific
+*.code-workspace
 
 # Local History for Visual Studio Code
 .history/

@@ -1,0 +1,13 @@
+{
+    "bip": "{{ docker_net.bip }}",
+    "mtu": 1500,
+    "default-address-pools": {{ docker_net.default_address_pools | to_nice_json }},
+    "ipv6": false,
+    "storage-driver": "overlay2",
+    "userns-remap": "{{ docker_provisioning_docker_user_name }}",
+    "log-driver": "json-file",
+    "log-opts": {
+      "max-size": "10m",
+      "max-file": "3"
+    }
+}

@@ -1,283 +1,302 @@
-# Docker Container Security: UID Management Strategy
-
-## Question Overview
-
-I need advice on Docker container security regarding UID management. I'm unsure if it's worth the effort to use unique
-UIDs for each container or if a simpler approach would be sufficient.
-
-## Current Setup
-
-I have an environment with multiple Docker containers where:
-
-- Each container uses a non-root, non-host mapped user
-- Example: UID 1234 doesn't exist on the host system (no permissions)
-- Permissions are manually set through Ansible so containers only access their specific host files
-- Example structure:
-  - `opt/docker/appdata/grafana/app/` owned by UID 1234
-  - `opt/docker/appdata/grafana/db/` owned by UID 1333
-  - Docker daemon runs with userns-remap UID 2222
-
-## Security Questions
-
-### Primary Concern
-
-Is it worth using unique UIDs (1234, 1333, etc.) for each container? Since Grafana only mounts
-`opt/docker/appdata/grafana/app/` and not `opt/docker/appdata/grafana/db/`, wouldn't it be impossible to access the
-unmounted path?
-
-### Compromise Scenario
-
-If the Grafana container (UID 1234) gets compromised:
-
-- Docker daemon runs as non-root user (UID 2222)
-- Grafana has no other host permissions
-- **Question:** Could Grafana access `opt/docker/appdata/grafana/db/` if compromised, even when unmounted?
-
-### Simplification Question
-
-Would it be easier to let containers run with default users mapped through userns-remap to UID 2222? Although this might
-give compromised containers access to everything UID 2222 can access.
-
-## Expert Analysis
-
-### 1. Container Filesystem Isolation
-
-**Short Answer:** No, containers cannot access unmounted paths by default.
-
-**Detailed Explanation:**
-
-Docker isolates filesystems by default. A container only sees:
-
-1. Its own filesystem layers (image + union filesystem overhead)
-2. Explicitly attached bind mounts or volumes
-
-If `opt/docker/appdata/grafana/db/` is not mounted into the container, the container has no path referencing it. An
-attacker inside the container cannot magically access the host's `/opt` directory unless it's mounted or there's a
-Docker misconfiguration.
-
-Even if the container UID matches a host user that can read the folder, the container's namespace doesn't map to the
-real host filesystem in a way that allows reading arbitrary directories.
-
-**Bottom Line:** Having the same UID on the host doesn't grant access to arbitrary unmounted host paths.
-
-### 2. Unique Host UIDs: Security Benefits
-
-**Short Answer:** Can improve security, but may be overkill for typical setups.
-
-**Detailed Analysis:**
-
-#### User Namespaces (userns-remap)
-
-You've enabled userns-remap, which maps container users (including root) to non-privileged host users (e.g., UID 2222).
-This drastically limits damage from container compromise since the host sees only an unprivileged UID.
-
-#### Multiple Unique UIDs
-
-**Scenarios where helpful:**
-
-- Multiple containers with different unprivileged host UIDs reduce risk of cross-container data access if there's
-  partial filesystem exposure
-- Provides defense-in-depth if you accidentally mount directories with shared ownership
-
-**Limitations:**
-
-- If containers never mount shared folders and only see explicitly bound directories, they're already isolated
-- File ownership on host only matters when multiple containers share host directories with different permission
-  requirements
-
-#### Security vs. Operational Complexity
-
-**Benefits:**
-
-- Ensures compromised containers can't access other containers' data, even with accidental mounts
-- Provides additional isolation layer
-
-**Drawbacks:**
-
-- Maintenance overhead: Ansible user ID matrix, Dockerfile/Compose mappings
-- Consistency requirements across staging/production
-- Increased operational complexity
-
-**Bottom Line:** If containers don't share volumes and mount only their own data, unique host UIDs provide minimal
-practical benefit for most internal deployments.
-
-### 3. Same UID for App and DB Containers
-
-**Mount-based Access Control:**
-
-- **Not mounted = not accessible:** If `grafana/app/` is the only mounted folder, the container can't read
-  `grafana/db/`, regardless of matching UIDs, because the folder isn't in the container's mount namespace
-- **Shared volume scenario:** If both directories are mounted in containers with the same UID, a compromised container
-  would have read/write access
-
-**Bottom Line:** If the `db/` path is never mounted in the compromised container, it remains invisible.
-
-### 4. Recommended Approach
-
-**Consider These Factors:**
-
-#### Minimal Additional Security
-
-If each container's data is in separate directories without cross-mounting, the default userns mapping (all containers
-as user 2222 on host) is generally sufficient. Container compromise escalates to host UID 2222, but that user only owns
-the single directory mounted for that container.
-
-#### Multi-Tenant / High-Security Environments
-
-For containers from different teams or lower trust environments, unique host UIDs provide "defense in depth" by reducing
-chances that mount mistakes or exploits could allow cross-container volume access.
-
-#### Operational Complexity
-
-Every additional unique UID requires maintenance in Docker, orchestrators (Compose, Swarm, Kubernetes), and
-configuration management (Ansible). This accumulates friction when managing large container fleets.
-
-**Recommendation:** For self-managed environments where you control all containers, using default userns remap to an
-unprivileged host user provides good security-vs-simplicity balance.
-
-## Additional Hardening Steps
-
-Regardless of UID approach, consider these best practices:
-
-### 1. Minimal Privilege Security Profiles
-
-- **AppArmor/SELinux:** Enable policies restricting container system calls and paths
-- **Seccomp profiles:** Block unnecessary syscalls when feasible
-
-### 2. Non-root Container Users
-
-- Even with userns mapping root → UID 2222 on host, run containers with non-root users internally
-- Many official images support `USER` directive in Dockerfile/Compose
-
-### 3. Explicit Restrictions
-
-- **Read-only mounts:** For data not requiring writes
-- **no-new-privileges:** Use in Docker/Compose settings when possible
-
-### 4. Network Segmentation
-
-- Segment Docker networks so compromised containers can't easily pivot to other internal services
-
-### 5. Capability Limitations
-
-- Drop unnecessary capabilities (SYS_ADMIN, NET_ADMIN, etc.)
-
-## Conclusion
-
-### Key Takeaways
-
-- **Single userns remapped UID** (e.g., 2222) for all containers typically provides sufficient isolation when each
-  container only mounts dedicated volume paths
-- **Unique UIDs per container** can help in advanced, highly secure, or multi-tenant environments, but adds complexity
-  that often isn't justified if container volumes are strictly separate
-- **Container isolation** prevents access to unmounted host directories—if `db/` is never mounted in the "app"
-  container, it remains inaccessible
-
-### Final Recommendation
-
-If operational simplicity is important, don't over-engineer the per-container UID approach. Default userns remap is
-already a significant security improvement over running containers as host root. For serious isolation or compliance
-requirements, you can implement more complex approaches, but for most internal environments, the overhead may not be
-justified.
-
-## Follow-up Discussion
-
-### Clarification Questions
-
-**Q:** For single-admin environments without multi-tenancy, is container compromise still concerning regarding unmounted
-path access?
-
-**A:** No, not under normal Docker isolation rules.
-
-#### Mount Namespace Isolation
-
-By default, containers only see:
-
-- Container's own filesystem/image layers
-- Explicitly attached volumes or host bind mounts
-- Unmounted host directories are invisible to container processes
-
-#### User ID Limitations
-
-Having matching or different UIDs on the host doesn't grant containers magical ability to see unmounted directories.
-Even if a compromised process "knows" about `/opt/docker/appdata/grafana/db/` on the host, that path doesn't exist
-inside the container unless explicitly mounted.
-
-#### Exceptions to Consider
-
-- **Privileged containers:** `--privileged` flag can break namespace isolation (avoid unless absolutely necessary)
-- **Docker socket mounting:** Mounting `/var/run/docker.sock` gives container control over Docker daemon (huge security
-  risk)
-- **Kernel/Docker vulnerabilities:** System-level exploits could theoretically break container isolation
-
-### Simplified Approach Recommendation
-
-#### Single Non-Root User Strategy
-
-**Setup:**
-
-- Every container runs as `USER 1234` (inside container)
-- Userns-remap maps container UID 1234 → host UID 2222
-- All containers appear as same unprivileged host user while maintaining filesystem isolation
-
-**Security Impact:**
-
-- For single-admin environments, difference between one non-root user vs. separate users is usually negligible
-- Container compromise scenario remains the same: hacked containers cannot access files outside mounted volumes
-- Host UID sharing doesn't compromise isolation if mount points are separate
-
-**Operational Benefits:**
-
-- Much easier management with single user ID in Dockerfiles/Compose/Ansible
-- Reduced overhead tracking "who owns what" at host level
-- Simplified permission management
-
-### Why Use Non-Root Inside Containers with userns?
-
-**Layered Security Benefits:**
-
-1. **Container Root → Host Non-root:** Even if container root is compromised, it corresponds to unprivileged UID on host
-   (e.g., 2222)
-2. **Non-root Container User:** Many official images run as root by default; overriding to non-root user (USER 1234) is
-   best practice
-3. **Combined Protection:** Layers two forms of user separation—inside container (non-root) and on host (remapped to
-   unprivileged UID)
-
-This combination reduces risk of container escapes and host system tampering.
-
-### Final Implementation Recommendation
-
-**Given your single-admin scenario:**
-
-1. **Not Multi-Tenant:** No urgent need to isolate containers via distinct host UIDs
-2. **No Overlapping Volumes:** Each container exclusively mounts its own directory
-3. **Userns-Remap Configured:** Root-level container compromise maps to non-root host user
-
-**Proposed Simple Setup:**
-
-- Use single non-root user for all containers (USER 1234 in Dockerfile/Compose)
-- Let userns-remap handle mapping (container user 1234 → host user 2222)
-- Manage single set of file permissions for each container's data directory
-
-**Security:** Compromised containers still cannot read/write data outside explicitly mounted volumes due to Docker's
-isolation.
-
-**Simplicity:** Track only one user ID inside containers (1234) and let Docker remap to single unprivileged host user
-(2222).
-
-### Optional Additional Hardening
-
-- **AppArmor/SELinux:** Tailored profiles for extra path and syscall enforcement
-- **Seccomp:** Keep default profile blocking dangerous system calls
-- **no-new-privileges:** Set `security_opt: ["no-new-privileges"]` when possible
-- **Capability dropping:** Remove unnecessary capabilities (CAP_SYS_ADMIN)
-- **Docker socket protection:** Never mount `/var/run/docker.sock` unless absolutely required
+# Blueprint: Docker Security & Implementation Patterns
+
+This document outlines the definitive, multi-layered security architecture and standard implementation patterns for all
+container deployments in the `Northern-Lights-Platform`. It is designed to provide defense-in-depth, ensure operational
+consistency, and serve as the single source of truth for the project's security posture. Adherence to this model is
+mandatory.
+
+## Architectural Philosophy
+
+The entire model is built upon three foundational principles which inform every decision:
+
+1. **Security First:** We employ a defense-in-depth strategy, assuming a zero-trust environment. The primary goal is to
+   protect the host from containers and to protect containers from each other.
+2. **Declarative State:** The desired state of our system is defined as code (primarily Ansible). We describe _what_ we
+   want, and let the tools enforce that state idempotently.
+3. **Simplicity & Scalability:** The system must be easy to manage and scale. We achieve this by using a single,
+   consistent user model and relying on battle-tested Docker features.
+
+---
+
+## Project-Wide Constants
+
+To ensure consistency, the following values are established as project-wide standards, managed within Ansible variables.
+
+| Variable Name            | Example Value | Purpose                                                                                     |
+| :----------------------- | :------------ | :------------------------------------------------------------------------------------------ |
+| `dockremap_user`         | `dockremap`   | The dedicated, non-login system user for `userns-remap`.                                    |
+| `subordinate_uid_start`  | `100000`      | The starting UID/GID in the subordinate range assigned to the `dockremap` user.             |
+| `subordinate_range_size` | `65536`       | The total number of UIDs/GIDs in the subordinate pool.                                      |
+| `container_internal_uid` | `1337`        | The standard non-root UID/GID to be used for all application processes _inside_ containers. |
+
+---
+
+## Host System Security & User Policy
+
+### Sudo Configuration Policy
+
+For a single-administrator system where authentication is secured by a hardware key (e.g., YubiKey), the risk profile
+for `sudo` operations is altered. The primary threat shifts from weak passwords to post-authentication attacks like
+session hijacking or malicious script execution.
+
+- **The Enterprise Best Practice (Recommended):** Retain the default `sudo` password requirement. The prompt serves as a
+  critical, final authorization checkpoint before executing a privileged command, providing a layer of defense against
+  accidental or malicious actions.
+- **The Homelab Convenience Option (Accepted Risk):** For a streamlined workflow, passwordless `sudo` may be implemented
+  for the primary administrative user. This is a conscious trade-off that prioritizes convenience over the added
+  security of the authorization checkpoint. This risk is deemed acceptable _only_ when strong, hardware-based
+  authentication is strictly enforced for all logins.
+- **Implementation (if passwordless is chosen):**
+
+  ```bash
+  # /etc/sudoers.d/01-admin-user
+  wasd ALL=(ALL) NOPASSWD: ALL
+  ```
+
+### Filesystem Ownership Policy
+
+To maintain strict security boundaries and ensure operational stability of the Docker daemon, the following ownership
+structure is mandatory.
+
+- **/opt/docker:** The root directory for the entire environment **MUST** be owned by `root:root`.
+- **Rationale:** The Docker daemon runs as the `root` user and requires authoritative control over its environment.
+  Administrative actions on this directory are performed via `sudo` through Ansible, adhering to the Principle of Least
+  Privilege. Granting ownership to a non-root user would introduce significant security risks and potential for runtime
+  permission errors.
+
+---
+
+## Pillar 1: Host-Container Isolation (The Host's Shield)
+
+This is the most critical layer of defense, preventing a container compromise from escalating to a host compromise.
+
+- **Mechanism:** Docker's User Namespaces (`userns-remap`).
+- **How It Works:** `userns-remap` maps users inside the container to the unprivileged subordinate range on the host.
+  For example, `root` (UID 0) inside a container becomes UID `100000` on the host. If an attacker escapes the container,
+  they are effectively neutralized, having no permissions on the host system.
+- **Reference Implementation:**
+
+  - A dedicated `dockremap` user and subordinate UID/GID ranges are configured on the host via Ansible.
+
+    ```yaml
+    # Ansible Task: tasks/host-setup.yml
+    - name: Create the 'dockremap' system user
+      ansible.builtin.user:
+        name: "{{ dockremap_user }}"
+        system: yes
+        shell: /bin/false
+        create_home: no
+
+    - name: Assign subordinate UID/GID range to the dockremap user
+      ansible.builtin.lineinfile:
+        path: "/etc/sub{{ item }}"
+        line: "{{ dockremap_user }}:{{ subordinate_uid_start }}:{{ subordinate_range_size }}"
+        create: yes
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - uid
+        - gid
+    ```
+
+  - The Docker daemon is configured to enable the feature. The full `daemon.json` content is managed declaratively by
+    Ansible.
+
+    ```json
+    // /etc/docker/daemon.json
+    {
+      // Pillar 1: Enable userns-remap to isolate host from containers.
+      "userns-remap": "dockremap",
+
+      // Define the root directory for all Docker-managed files (volumes, images, etc.).
+      "data-root": "/opt/docker/data",
+
+      // General best practices
+      "log-driver": "json-file",
+      "log-opts": {
+        "max-size": "10m",
+        "max-file": "3"
+      }
+    }
+    ```
+
+---
+
+## Pillar 2: Container-Container Isolation (The "Golden Rule")
+
+This layer prevents a compromised container from accessing the data of its neighbors.
+
+- **Mechanism:** Docker **Named Volumes**.
+- **The Golden Rule:** All persistent, stateful application data **MUST** be stored in a Docker Named Volume.
+- **Why This Is The Correct Method:** With `userns-remap` active, the Docker daemon automatically handles the complex
+  ownership mapping for named volumes, ensuring the container's remapped user can access its data. Furthermore, Docker
+  creates a `root`-owned directory structure for its volumes, which acts as a security barrier preventing a process in
+  one container from traversing the filesystem to access another container's data.
+- **Forbidden Alternative (Bind Mounts):** The use of bind-mounts (`- /some/host/path:/data`) for stateful data is
+  **strictly forbidden**. This practice is incompatible with our security model, as the container's remapped user (e.g.,
+  `101337`) would be denied permission to write to a host path owned by a different user, leading to runtime failures.
+- **Reference Implementation (`docker-compose.yml`):**
+
+  ```yaml
+  services:
+    app1:
+      image: some/image
+      user: "{{ container_internal_uid }}"
+      volumes:
+        # Correct: Maps the named volume 'app1_data' to a path inside the container.
+        - app1_data:/path/in/container
+
+  # Crucial: Declares the named volume for Docker to manage.
+  volumes:
+    app1_data:
+  ```
+
+---
+
+## Pillar 3: Intra-Container Security (Least Privilege)
+
+This final layer minimizes an attacker's capabilities _inside_ a compromised container.
+
+- **Mechanism:** A single, consistent, non-root user for all application processes.
+- **Concept:** We use the standard `container_internal_uid` (e.g., `1337`) for all containers, set via
+  `user: "{{ container_internal_uid }}"`. This user does not need to exist on the host.
+- **Rationale:** Running as non-root _inside_ the container prevents an attacker who compromises the process from using
+  package managers (`apt install`), modifying application binaries, or changing configuration files within the
+  container's own filesystem.
+- **Reference Implementation (`docker-compose.yml`):**
+
+  ```yaml
+  services:
+    app1:
+      image: some/image
+      # Run the process as the standard non-root user inside the container.
+      user: "{{ container_internal_uid }}"
+      volumes:
+        - app1_data:/path/in/container
+  volumes:
+    app1_data:
+  ```
+
+---
+
+## Standard Implementation Patterns
+
+These are repeatable, secure patterns for building and deploying applications on the platform.
+
+### 1. Host Filesystem Structure
+
+This structure, managed by Ansible, provides clear separation of concerns. All paths are owned by `root:root`.
+
+```tree
+/opt/docker/
+├── data/       # (Mode: 0701) Docker's private directory. DO NOT TOUCH.
+├── services/   # (Mode: 0750) Stores Ansible role data (e.g., compose templates).
+├── secrets/    # (Mode: 0700) Stores host-side secret files.
+└── logs/       # (Mode: 0755) Parent for log file bind-mounts (a managed exception).
+```
+
+### 2. Handling Secrets
+
+This pattern securely provides credentials, even to applications that can't read from Docker secrets natively.
+
+1. **Ansible Creates the Secret File on the Host:**
+
+   ```yaml
+   # tasks/secrets.yml
+   - name: Generate and save secret if it does not exist
+     ansible.builtin.copy:
+       content: "{{ lookup('password', '/dev/null length=32') }}"
+       dest: /opt/docker/secrets/db_password
+       owner: root
+       group: root
+       mode: "0600"
+   ```
+
+2. **Docker Compose Consumes the File as a Docker Secret:**
+
+   ```yaml
+   services:
+     app:
+       image: ...
+       user: "{{ container_internal_uid }}"
+       secrets:
+         - db_password
+   secrets:
+     db_password:
+       file: /opt/docker/secrets/db_password
+   ```
+
+3. **(Optional) Entrypoint Bridge for Legacy Apps:** For apps that can only read secrets from environment variables.
+
+   - **`entrypoint.sh`:**
+
+     ```sh
+     #!/bin/sh
+     set -e
+     export APP_DB_PASSWORD=$(cat /run/secrets/db_password)
+     exec "$@"
+     ```
+
+   - **`Dockerfile`:**
+
+     ```dockerfile
+     FROM original/image:latest
+     COPY entrypoint.sh /usr/local/bin/
+     RUN chmod +x /usr/local/bin/entrypoint.sh
+     ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+     CMD ["/run.sh"] # Must be the original CMD from the base image
+     ```
+
+### 3. Sharing Read-Only Access (e.g., Log Analysis)
+
+This pattern allows a "reader" container to securely access logs written by other containers via a bind-mount, which is
+a managed exception to the "Golden Rule" for non-stateful, read-only data.
+
+1. **Ansible Creates a Shared Group:** A dedicated group (e.g., `logreaders` with GID `3000`) is created on the host.
+2. **Ansible Sets Log Directory Permissions:**
+
+   ```yaml
+   # tasks/logs.yml
+   - name: Create service log directory with shared group ownership
+     ansible.builtin.file:
+       path: "/opt/docker/logs/{{ item.name }}"
+       state: directory
+       # The owner is the container's remapped UID. The group is the shared group.
+       owner: "{{ subordinate_uid_start + item.uid }}" # e.g., 100000 + 1337
+       group: logreaders
+       mode: "0750" # Owner: rwx, Group: r-x, Other: ---
+     loop:
+       - { name: "grafana", uid: "{{ container_internal_uid }}" }
+       - { name: "postgres", uid: "{{ container_internal_uid }}" }
+   ```
+
+   > **Note:** This pattern relies on the "writer" application creating its log files with group-readable permissions
+   > (e.g., `640` or `660`).
+
+3. **"Reader" Container Joins the Group:**
+
+   ```yaml
+   services:
+     log-analyzer:
+       image: some/analyzer
+       user: "{{ container_internal_uid }}"
+       # The container process is added to the 'logreaders' GID on the host.
+       group_add:
+         - "3000"
+       volumes:
+         # Mount the entire log directory as read-only.
+         - /opt/docker/logs:/logs:ro
+   ```
+
+---
 
 ## Summary
 
-For single-tenant users where each container has dedicated mounts, there's little practical benefit to unique UIDs per
-container. Using a single non-root user (1234) inside containers with userns-remap to unprivileged host user (2222)
-provides adequate security with reduced operational overhead.
+This three-pillar model provides a complete, defense-in-depth security posture.
 
-Compromised containers cannot access other containers' host files unless explicitly mounted, making this setup standard
-and sufficient for most personal or single-admin Docker environments.
+| Pillar                               | Mechanism                  | Security Outcome                                                    |
+| :----------------------------------- | :------------------------- | :------------------------------------------------------------------ |
+| **1. Host-Container Isolation**      | `userns-remap`             | Protects the **Host** from a compromised **Container**.             |
+| **2. Container-Container Isolation** | **Named Volumes**          | Protects **Containers** from **each other** on the host filesystem. |
+| **3. Intra-Container Security**      | **Standard Non-Root User** | Protects a **Container** from its **own compromised process**.      |

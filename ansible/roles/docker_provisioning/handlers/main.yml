@@ -1,0 +1,8 @@
+---
+# handlers file for roles/docker_provisioning
+
+- name: Restart docker
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+  failed_when: false

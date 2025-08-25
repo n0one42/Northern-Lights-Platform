@@ -1,0 +1,10 @@
+---
+# defaults file for roles/docker_provisioning
+
+docker_provisioning_timezone: "{{ timezone }}"
+
+docker_provisioning_primary_user_name: "{{ primary_user_name }}"
+
+docker_provisioning_docker_user_name: "{{ docker.user_name }}"
+docker_provisioning_docker_user_uid: "{{ docker.user_ugid }}"
+docker_provisioning_docker_user_gid: "{{ docker.user_ugid }}"

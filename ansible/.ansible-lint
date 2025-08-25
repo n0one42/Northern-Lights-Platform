@@ -17,8 +17,9 @@ skip_list:
   - yaml[line-length] # Delegated to yamllint with 120 char limit
   - var-naming[no-role-prefix] # Allow flexibility in variable naming
   - name[template] # Allow flexibility in template naming
+  - yaml[comments-indentation]
 
-# Enterprise-specific rules to enforce
+# # Enterprise-specific rules to enforce
 enable_list:
   - args # Ensure proper module argument formatting
   - fqcn[action] # Enforce fully qualified collection names
@@ -86,8 +87,6 @@ offline: false # Enable for better collection detection
 use_default_rules: true
 progressive: true # Show progress bar for better UX
 strict: true # Strict mode for enterprise environments
-write_list: # Create list of files to be fixed
-  - all
 
 # Task name formatting requirements
 task_name_prefix: "{stem} | " # Enforce consistent task naming
@@ -102,4 +101,8 @@ var_naming_pattern: "^[a-z_][a-z0-9_]*$"
 #   - ansible.posix
 #   - ansible.utils
 
-# Documentation: https://ansible.readthedocs.io/projects/lint/configuring/
+# Things which should not be implemented since they are not correct:
+# write_list: # Create list of files to be fixed
+#   - all
+
+# # Documentation: https://ansible.readthedocs.io/projects/lint/configuring/

@@ -1,2 +1,124 @@
+# ansible/roles/{{ role_name.split('/')[-1] }}/defaults/main.yml
 ---
-# defaults file for {{ role_name }}
+# Default variables for {{ role_name.split('/')[-1] }} role
+# These can be overridden in group_vars, host_vars, or playbook vars
+
+# ? ######################################################################################## #
+# *                                    Docker Configuration                                  #
+# ? ######################################################################################## #
+
+# Container image and version
+{{ role_name.split('/')[-1] }}_image: ""  # Example: "traefik:3.0"
+{{ role_name.split('/')[-1] }}_container_name: "{{ role_name.split('/')[-1].replace('dc_', '') }}"
+
+# User/Group ID for container (before userns remapping)
+{{ role_name.split('/')[-1] }}_ugid: "{{ '{{ docker.container_internal_ugid | default(1000) }}' }}"
+{{ role_name.split('/')[-1] }}_create_with_userns: true
+
+# ? ######################################################################################## #
+# *                                    Network Configuration                                 #
+# ? ######################################################################################## #
+
+# Application network configuration
+{{ role_name.split('/')[-1] }}_net:
+  name: "{{ role_name.split('/')[-1] }}_net"
+  subnet: ""  # Will be set based on vm_id if not overridden
+  {{ role_name.split('/')[-1].replace('dc_', '') }}_ip: ""  # Main app container IP
+  db_ip: ""       # Database container IP (if used)
+  redis_ip: ""    # Redis container IP (if used)
+
+# Socket proxy network (if enabled)
+{{ role_name.split('/')[-1] }}_socketproxy_net:
+  name: "{{ role_name.split('/')[-1] }}_socketproxy_net"
+  subnet: ""  # Will be set based on vm_id if not overridden
+  socketproxy_ip: ""  # Socket proxy container IP
+  {{ role_name.split('/')[-1].replace('dc_', '') }}_ip: ""  # App container IP in this network
+
+# ? ######################################################################################## #
+# *                                    Feature Toggles                                       #
+# ? ######################################################################################## #
+
+{{ role_name.split('/')[-1] }}_use_socketproxy: true
+{{ role_name.split('/')[-1] }}_crowdsec_enabled: false
+{{ role_name.split('/')[-1] }}_use_database: false
+{{ role_name.split('/')[-1] }}_use_redis: false
+
+# ? ######################################################################################## #
+# *                                    Application Settings                                  #
+# ? ######################################################################################## #
+
+# Application directories
+{{ role_name.split('/')[-1] }}_root_app_dir_name: "{{ role_name.split('/')[-1].replace('dc_', '') }}"
+{{ role_name.split('/')[-1] }}_sub_app_dir_name: "app"
+{{ role_name.split('/')[-1] }}_socketproxy_sub_app_dir_name: "socketproxy"
+{{ role_name.split('/')[-1] }}_db_sub_app_dir_name: "db"
+{{ role_name.split('/')[-1] }}_redis_sub_app_dir_name: "redis"
+
+# Application ports
+{{ role_name.split('/')[-1] }}_web_port: 8080
+{{ role_name.split('/')[-1] }}_db_port: 5432
+{{ role_name.split('/')[-1] }}_redis_port: 6379
+
+# ? ######################################################################################## #
+# *                                    Database Configuration                                #
+# ? ######################################################################################## #
+
+{{ role_name.split('/')[-1] }}_db_image: "docker.io/bitnami/postgresql:16"
+{{ role_name.split('/')[-1] }}_db_name: "{{ role_name.split('/')[-1].replace('dc_', '') }}_db"
+{{ role_name.split('/')[-1] }}_db_user_name: "{{ role_name.split('/')[-1].replace('dc_', '') }}_user"
+# {{ role_name.split('/')[-1] }}_db_user_pw: ""  # Generated if not set
+# {{ role_name.split('/')[-1] }}_db_superuser_pw: ""  # Generated if not set
+
+# ? ######################################################################################## #
+# *                                    Redis Configuration                                   #
+# ? ######################################################################################## #
+
+{{ role_name.split('/')[-1] }}_redis_image: "docker.io/bitnami/redis:7.2"
+# {{ role_name.split('/')[-1] }}_redis_user_pw: ""  # Generated if not set
+
+# ? ######################################################################################## #
+# *                                    Socket Proxy Settings                                 #
+# ? ######################################################################################## #
+
+{{ role_name.split('/')[-1] }}_socketproxy_image: "tecnativa/docker-socket-proxy:0.2"
+{{ role_name.split('/')[-1] }}_socketproxy_log_level: "warning"  # debug, info, notice, warning, err, crit, alert, emerg
+
+# Socket proxy permissions (security-critical)
+# Granted by default
+{{ role_name.split('/')[-1] }}_socketproxy_events: 1
+{{ role_name.split('/')[-1] }}_socketproxy_ping: 1
+{{ role_name.split('/')[-1] }}_socketproxy_version: 1
+
+# ! REVOKED by default - Enable with extreme caution
+{{ role_name.split('/')[-1] }}_socketproxy_auth: 0      # Authentication API
+{{ role_name.split('/')[-1] }}_socketproxy_post: 0      # POST operations
+{{ role_name.split('/')[-1] }}_socketproxy_secrets: 0   # Secrets access
+
+# Other permissions (enable as needed)
+{{ role_name.split('/')[-1] }}_socketproxy_allow_start: 0
+{{ role_name.split('/')[-1] }}_socketproxy_allow_stop: 0
+{{ role_name.split('/')[-1] }}_socketproxy_allow_restarts: 0
+{{ role_name.split('/')[-1] }}_socketproxy_build: 0
+{{ role_name.split('/')[-1] }}_socketproxy_commit: 0
+{{ role_name.split('/')[-1] }}_socketproxy_configs: 0
+{{ role_name.split('/')[-1] }}_socketproxy_containers: 1
+{{ role_name.split('/')[-1] }}_socketproxy_distribution: 0
+{{ role_name.split('/')[-1] }}_socketproxy_exec: 0
+{{ role_name.split('/')[-1] }}_socketproxy_images: 0
+{{ role_name.split('/')[-1] }}_socketproxy_info: 0
+{{ role_name.split('/')[-1] }}_socketproxy_networks: 0
+{{ role_name.split('/')[-1] }}_socketproxy_nodes: 0
+{{ role_name.split('/')[-1] }}_socketproxy_plugins: 0
+{{ role_name.split('/')[-1] }}_socketproxy_services: 0
+{{ role_name.split('/')[-1] }}_socketproxy_session: 0
+{{ role_name.split('/')[-1] }}_socketproxy_swarm: 0
+{{ role_name.split('/')[-1] }}_socketproxy_system: 0
+{{ role_name.split('/')[-1] }}_socketproxy_tasks: 0
+{{ role_name.split('/')[-1] }}_socketproxy_volumes: 0
+{{ role_name.split('/')[-1] }}_socketproxy_disable_ipv6: 1
+
+# ? ######################################################################################## #
+# *                                    CrowdSec Configuration                                #
+# ? ######################################################################################## #
+
+# {{ role_name.split('/')[-1] }}_crowdsec_bouncer_key: ""  # Generated or set in z_*.yml

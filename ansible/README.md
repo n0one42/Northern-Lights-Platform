@@ -122,7 +122,69 @@ ansible-lint playbooks/<playbook_name>.yml
 
 # Validate playbook syntax
 ansible-playbook playbooks/<playbook_name>.yml --syntax-check
+
+# Check YAML syntax
+yamllint .
 ```
+
+### Formatting
+
+```bash
+# Format a file with Prettier (if not excluded)
+npx prettier --write <file.yml>
+
+# Check if a file would be formatted
+npx prettier --check <file.yml>
+
+# Format all non-excluded files
+npx prettier --write "**/*.{yml,yaml,json,md}"
+```
+
+## 💅 Formatting Guidelines
+
+### Formatting Strategy
+
+We use **Prettier** as our single code formatter for consistency across all file types. However, some Ansible YAML files with custom column alignment are excluded from automatic formatting to preserve readability.
+
+### Files Excluded from Prettier
+
+The following files are excluded from Prettier formatting (see `.prettierignore`):
+- `inventories/group_vars/all/network.yml` - Network configuration with aligned values
+- `inventories/group_vars/all/main.yml` - Main configuration with aligned comments
+- `inventories/hosts.yml` - Inventory with visual structure
+- `inventories/z_*.yml` - User override files
+
+### Using Prettier Ignore Comments
+
+For temporary formatting exclusions within a file:
+
+```yaml
+# prettier-ignore
+default_net:
+  vlan_id:      1        # Aligned comment
+  bridge_name:  "vmbr0"  # Aligned comment
+  subnet:       "192.168.1.0/24"
+
+# This section will be formatted normally
+regular_config:
+  key: value
+  another_key: another_value
+```
+
+### When to Exclude Files
+
+Only exclude files from Prettier when:
+1. The file has intentional column alignment for readability
+2. The alignment significantly improves comprehension (e.g., network configs, matrices)
+3. Multiple team members agree the custom formatting adds value
+
+### Manual Formatting
+
+For excluded files, maintain consistency manually:
+- Use 2-space indentation
+- Align colons for related configuration blocks
+- Keep line length under 120 characters
+- Add explanatory comments for complex alignments
 
 ## 🔧 VS Code Features
 
@@ -133,6 +195,7 @@ When you open the workspace file, VS Code automatically:
 - ✅ Validates against Ansible schemas
 - ✅ Runs ansible-lint in real-time
 - ✅ Shows Python interpreter and Ansible version in status bar
+- ✅ Formats files with Prettier on save (unless excluded)
 
 ## 📚 Documentation
 

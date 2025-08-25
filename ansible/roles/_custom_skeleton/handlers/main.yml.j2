@@ -1,2 +1,25 @@
+# ansible/roles/{{ role_name.split('/')[-1] }}/handlers/main.yml
 ---
-# handlers file for {{ role_name }}
+# Handlers for {{ role_name.split('/')[-1] }} role
+
+- name: Restart {{ role_name.split('/')[-1] }} container
+  community.docker.docker_compose_v2:
+    project_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name }}' }}"
+    project_src: "{{ '{{ [docker.home, ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name, ' ~ role_name.split('/')[-1] ~ '_sub_app_dir_name] | select(\'defined\') | reject(\'equalto\', \'\') | join(\'/\') }}' }}"
+    restarted: true
+  listen: "restart {{ role_name.split('/')[-1] }}"
+
+- name: Reload {{ role_name.split('/')[-1] }} configuration
+  community.docker.docker_container_exec:
+    container: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_container_name }}' }}"
+    command: "kill -HUP 1"
+  listen: "reload {{ role_name.split('/')[-1] }}"
+  ignore_errors: true
+
+- name: Restart docker daemon
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+    daemon_reload: true
+  become: true
+  listen: "restart docker"

@@ -1,2 +1,19 @@
+# ansible/roles/{{ role_name.split('/')[-1] }}/vars/main.yml
 ---
-# vars file for {{ role_name }}
+# Variables for {{ role_name.split('/')[-1] }} role
+# These variables have higher precedence than defaults but should generally not be modified
+# Use group_vars or host_vars to override defaults instead
+
+# ? ######################################################################################## #
+# *                                    Internal Variables                                    #
+# ? ######################################################################################## #
+# These are typically calculated or derived values used internally by the role
+
+# Example calculated network subnets based on VM ID
+# {{ role_name.split('/')[-1] }}_calculated_subnet: "{{ '{{ \'10.\' ~ (100 + vm_id) ~ \'.0.0/16\' }}' }}"
+
+# Example override patterns - uncomment to use
+# {{ role_name.split('/')[-1] }}_use_socketproxy: false  # Disable socket proxy for this service
+# {{ role_name.split('/')[-1] }}_crowdsec_enabled: true  # Enable CrowdSec integration
+# {{ role_name.split('/')[-1] }}_use_database: true      # Enable PostgreSQL database
+# {{ role_name.split('/')[-1] }}_use_redis: true         # Enable Redis cache

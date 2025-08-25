@@ -15,10 +15,8 @@ rules:
 
   # Comments formatting
   comments:
-    min-spaces-from-content: 2 # Require 2 spaces before inline comments
+    min-spaces-from-content: 1 # Require 1 spaces before inline comments (matches the hardcoded prettier rule)
     require-starting-space: true
-    min-spaces-before: 0
-    max-spaces-before: -1
 
   # Indentation rules - consistent 2 spaces
   indentation:

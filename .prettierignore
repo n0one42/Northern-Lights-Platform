@@ -1,0 +1,80 @@
+# Northern-Lights-Platform/.prettierignore
+# Files and directories to ignore from Prettier formatting
+
+# =================================================================================
+# Ansible Files with Custom Column Alignment
+# =================================================================================
+# These files contain intentional column alignment for readability
+# that should be preserved and not reformatted by Prettier
+
+# Configurations with aligned values
+ansible/inventories/group_vars/all/network.yml
+
+
+# =================================================================================
+# Generated and External Files
+# =================================================================================
+# Files that are generated or managed by external tools
+
+# Node modules and dependencies
+node_modules/
+**/node_modules/
+
+# Python virtual environments
+.venv/
+**/.venv/
+venv/
+**/venv/
+
+# Version control
+.git/
+**/.git/
+
+# Minified files
+*.min.js
+*.min.css
+**/*.min.js
+**/*.min.css
+
+# =================================================================================
+# Build Outputs and Logs
+# =================================================================================
+dist/
+build/
+*.log
+**/*.log
+
+# =================================================================================
+# Cache and Temporary Files
+# =================================================================================
+.cache/
+**/.cache/
+.tmp/
+**/.tmp/
+*.retry
+**/*.retry
+
+# Ansible cache
+ansible/.ansible_facts_cache/
+ansible/collections/
+
+# =================================================================================
+# Configuration Files (Already handled by specific formatters)
+# =================================================================================
+# Let terraform fmt handle Terraform files when added
+terraform/**/*.tf
+terraform/**/*.tfvars
+terraform/**/*.hcl
+
+# =================================================================================
+# Notes for Developers
+# =================================================================================
+# To exclude additional files with custom formatting:
+# 1. Add the file path relative to the repository root
+# 2. Document why the file needs custom formatting preserved
+# 3. Consider if a pattern can be used for similar files
+#
+# To temporarily disable Prettier for a section in a file:
+# Use <!-- prettier-ignore --> in Markdown
+# Use # prettier-ignore in YAML (for the next line/block)
+# Use /* prettier-ignore */ in JavaScript/CSS

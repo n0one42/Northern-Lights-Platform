@@ -1,3 +1,4 @@
+---
 - name: This is my playbook
   hosts: all
   # invalid_playbook_key: "this should cause an error" # Add this line

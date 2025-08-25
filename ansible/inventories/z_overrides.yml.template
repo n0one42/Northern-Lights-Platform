@@ -1,0 +1,36 @@
+# Northern-Lights-Platform Override Configuration Template
+#
+# This file serves as a template for creating your own `z_overrides.yml` file.
+# To use it, copy this file to `z_overrides.yml` (or any `z_*.yml` name)
+# in this directory. This file will be ignored by Git.
+#
+# The `z_` prefix ensures that the variables defined here are loaded last
+# and will override any default settings from the main project configuration.
+#
+# Uncomment and set the variables below to customize the platform for your
+# specific environment.
+
+# --- General Settings ---
+
+# The primary domain name for your services
+# default_domain_name: "example.com"
+
+# The email address to use for Let's Encrypt SSL certificates
+# letsencrypt_email: "your-email@example.com"
+
+# --- Proxmox Connection Settings ---
+
+# The hostname or IP address of your Proxmox server
+# pve_host: "192.168.1.10"
+
+# The Proxmox API user and token for Ansible to use
+# pve_api_user: "ansible-provisioner@pve"
+# pve_api_token_id: "ansible-token"
+# pve_api_token_secret: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# --- Language and Locale Settings ---
+
+# System language and locale settings
+# system_lang: "en_US.UTF-8"
+# system_locale: "en_US.UTF-8"
+# system_timezone: "Etc/UTC"

@@ -1,0 +1,249 @@
+---
+# tasks file for {{ role_name.split('/')[-1] }}
+- name: Init {{ role_name.split('/')[-1] }}
+  block:
+# ? ######################################################################################## #
+# *                                    External Networks                                     #
+# ? ######################################################################################## #
+    - name: Create socketproxy network for --> {{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}
+      community.docker.docker_network:
+        name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_net.name' ~ ' }}' }}"
+        driver: bridge
+        internal: true
+        ipam_config:
+          - subnet: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_net.subnet' ~ ' }}' }}"
+
+    - name: Create app network for --> {{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}
+      community.docker.docker_network:
+        name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_net.name' ~ ' }}' }}"
+        driver: bridge
+        internal: true
+        ipam_config:
+          - subnet: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_net.subnet' ~ ' }}' }}"
+
+
+# ? ######################################################################################## #
+# *                                         CrowdSec                                         #
+# ? ######################################################################################## #
+    - name: Include crowdsec role
+      ansible.builtin.import_role:
+        name: dc_crowdsec
+      when: {{ role_name.split('/')[-1] ~ '_crowdsec_enabled' }}
+
+
+# ? ######################################################################################## #
+# *                                       Socket Proxy                                       #
+# ? ######################################################################################## #
+    - name: Include socketproxy role
+      ansible.builtin.import_role:
+        name: dc_socketproxy
+      vars:
+        dc_socketproxy_root_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+        dc_socketproxy_sub_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_sub_app_dir_name' ~ ' }}' }}"
+        dc_socketproxy_image: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_image' ~ ' }}' }}"
+        dc_socketproxy_env_log_level: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_log_level' ~ ' }}' }}"
+
+        dc_socketproxy_net_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_net.name' ~ ' }}' }}"
+        dc_socketproxy_net_socketproxy_ip: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_net.socketproxy_ip' ~ ' }}' }}"
+
+        ## Granted by Default
+        dc_socketproxy_env_events: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_events' ~ ' }}' }}"
+        dc_socketproxy_env_ping: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_ping' ~ ' }}' }}"
+        dc_socketproxy_env_version: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_version' ~ ' }}' }}"
+        # ! Revoked by Default
+        # ! Security critical - Maximum caution when enabling these.
+        dc_socketproxy_env_auth: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_auth' ~ ' }}' }}"
+        dc_socketproxy_env_post: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_post' ~ ' }}' }}"
+        dc_socketproxy_env_secrets: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_secrets' ~ ' }}' }}"
+        # * Not always needed - Can expose some information that your service does not need.
+        dc_socketproxy_env_allow_start: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_allow_start' ~ ' }}' }}"
+        dc_socketproxy_env_allow_stop: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_allow_stop' ~ ' }}' }}"
+        dc_socketproxy_env_allow_restarts: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_allow_restarts' ~ ' }}' }}"
+        dc_socketproxy_env_disable_ipv6: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_disable_ipv6' ~ ' }}' }}"
+        dc_socketproxy_env_build: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_build' ~ ' }}' }}"
+        dc_socketproxy_env_commit: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_commit' ~ ' }}' }}"
+        dc_socketproxy_env_configs: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_configs' ~ ' }}' }}"
+        dc_socketproxy_env_containers: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_containers' ~ ' }}' }}"
+        dc_socketproxy_env_distribution: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_distribution' ~ ' }}' }}"
+        dc_socketproxy_env_exec: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_exec' ~ ' }}' }}"
+        dc_socketproxy_env_images: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_images' ~ ' }}' }}"
+        dc_socketproxy_env_info: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_info' ~ ' }}' }}"
+        dc_socketproxy_env_networks: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_networks' ~ ' }}' }}"
+        dc_socketproxy_env_nodes: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_nodes' ~ ' }}' }}"
+        dc_socketproxy_env_plugins: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_plugins' ~ ' }}' }}"
+        dc_socketproxy_env_services: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_services' ~ ' }}' }}"
+        dc_socketproxy_env_session: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_session' ~ ' }}' }}"
+        dc_socketproxy_env_swarm: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_swarm' ~ ' }}' }}"
+        dc_socketproxy_env_system: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_system' ~ ' }}' }}"
+        dc_socketproxy_env_tasks: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_tasks' ~ ' }}' }}"
+        dc_socketproxy_env_volumes: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_socketproxy_volumes' ~ ' }}' }}"
+      when: {{ '' ~ role_name.split('/')[-1] ~ '_use_socketproxy' ~ ' | default(true)' }}
+
+
+# ? ######################################################################################## #
+# *                                            DB                                            #
+# ? ######################################################################################## #
+    - name: Include postgresql role
+      ansible.builtin.import_role:
+        name: dc_postgresql_bitnami
+      vars:
+        dc_postgresql_bitnami_root_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+        dc_postgresql_bitnami_sub_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_sub_app_dir_name' ~ ' }}' }}"
+        dc_postgresql_bitnami_image: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_image' ~ ' }}' }}"
+        dc_postgresql_bitnami_db_port: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_port' ~ ' }}' }}"
+
+        dc_postgresql_bitnami_root_app_net_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_net.name' ~ ' }}' }}"
+        dc_postgresql_bitnami_root_app_net_db_ip: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_net.db_ip' ~ ' }}' }}"
+
+        dc_postgresql_bitnami_db_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_name' ~ ' }}' }}"
+        dc_postgresql_bitnami_db_user_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_user_name' ~ ' }}' }}"
+        dc_postgresql_bitnami_db_user_pw: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_user_pw' ~ ' }}' }}" # ? optional - generated if not set
+        dc_postgresql_bitnami_db_superuser_pw: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_db_superuser_pw' ~ ' }}' }}" # ? optional - generated if not set
+
+
+# ? ######################################################################################## #
+# *                                           Redis                                          #
+# ? ######################################################################################## #
+    - name: Include redis role
+      ansible.builtin.import_role:
+        name: dc_redis_bitnami
+      vars:
+        dc_redis_bitnami_root_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+        dc_redis_bitnami_sub_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_redis_sub_app_dir_name' ~ ' }}' }}"
+        dc_redis_bitnami_image: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_redis_image' ~ ' }}' }}"
+        dc_redis_bitnami_redis_port: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_redis_port' ~ ' }}' }}"
+
+        dc_redis_bitnami_root_app_net_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_net.name' ~ ' }}' }}"
+        dc_redis_bitnami_root_app_net_redis_ip: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_net.redis_ip' ~ ' }}' }}"
+
+        dc_redis_bitnami_db_user_pw: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_redis_user_pw' ~ ' }}' }}" # ? optional - generated if not set
+
+
+# ? ######################################################################################## #
+# *                                    Filesystem Manager                                    #
+# ? ######################################################################################## #
+    - name: Include filesystem_manager role
+      ansible.builtin.import_role:
+        name: filesystem_manager
+      vars:
+        filesystem_manager_root_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+        filesystem_manager_sub_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_sub_app_dir_name' ~ ' }}' }}"
+        filesystem_manager_ugid: "{{ '{{ (' ~ role_name.split('/')[-1] ~ '_create_with_userns | default(true) | bool) | ternary(' ~ role_name.split('/')[-1] ~ '_ugid | default(docker.container_internal_ugid) + 100000, ' ~ role_name.split('/')[-1] ~ '_ugid | default(docker.container_internal_ugid)) }}' }}"
+        filesystem_manager_secret_files_to_create:
+          - file_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' ~ '_crowdsec_bouncer_key' }}"
+            content: "{{ "{{ " ~ role_name.split('/')[-1] ~ "_crowdsec_bouncer_key | default('')" ~ " }}" }}"
+      when: {{ role_name.split('/')[-1] ~ '_crowdsec_enabled' }}
+
+    - name: Include filesystem_manager role
+      ansible.builtin.import_role:
+        name: filesystem_manager
+      vars:
+        filesystem_manager_root_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+        filesystem_manager_sub_app_dir_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_sub_app_dir_name' ~ ' }}' }}"
+        filesystem_manager_ugid: "{{ '{{ (' ~ role_name.split('/')[-1] ~ '_create_with_userns | default(true) | bool) | ternary(' ~ role_name.split('/')[-1] ~ '_ugid | default(docker.container_internal_ugid) + 100000, ' ~ role_name.split('/')[-1] ~ '_ugid | default(docker.container_internal_ugid)) }}' }}"
+        filesystem_manager_restart_container_on_template_change: true
+        filesystem_manager_dirs_to_create:
+          - path: data
+        filesystem_manager_secret_files_to_create:
+          - file_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' ~ '_crowdsec_bouncer_key' }}"
+            content: "{{ "{{ " ~ role_name.split('/')[-1] ~ "_crowdsec_bouncer_key | default('')" ~ " }}" }}"
+          - file_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' ~ '_db_user_pw' }}"
+            content: "{{ "{{ " ~ role_name.split('/')[-1] ~ "_db_user_pw | default('')" ~ " }}" }}"
+            type: postgres_password
+        filesystem_manager_secret_files_to_facts:
+          - "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' ~ '_db_user_pw' }}"
+
+
+# ? ######################################################################################## #
+# *                                      Docker Compose                                      #
+# ? ######################################################################################## #
+    - name: Install docker compose with inline definition
+      vars:
+        path: "{% raw %}{{ [docker.home, {% endraw -%}{{ role_name.split('/')[-1] }}_root_app_dir_name{% raw %}, {% endraw -%}{{ role_name.split('/')[-1] }}_sub_app_dir_name{% raw %}] | select('defined') | reject('equalto', '') | join('/') }}{% endraw %}"
+      community.docker.docker_compose_v2:
+        project_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+        definition:
+        # * ---------------------------- Secrets ---------------------------- * #
+          secrets:
+            my_secret:
+              file: "{{ '{{ docker.container_secrets }}/{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}_my_secret' }}"
+        # * ---------------------------- Networks --------------------------- * #
+          networks: >-
+            {{ '{{' }}{}
+              | combine(
+                {
+                  "socketproxy_net": {
+                    "name": {{ role_name.split('/')[-1] ~ '_socketproxy_net.name' }},
+                    "external": true
+                  }
+                } if {{ role_name.split('/')[-1] ~ '_use_socketproxy | default(true)' }} else {})
+              | combine(
+                {
+                  "app_net": {
+                    "name": {{ role_name.split('/')[-1] ~ '_net.name' }},
+                    "external": true
+                  }
+                })
+              | combine(
+                {
+                  "traefik_net": {
+                    "name": dc_traefik_net.name,
+                    "external": true
+                  }
+                })
+            {{ '}}' }}
+        # * ---------------------------- Services --------------------------- * #
+          services:
+            {{ role_name.split('/')[-1].replace('dc_', '') }}:
+              container_name: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_root_app_dir_name' ~ ' }}' }}"
+              image: "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_image' ~ ' }}' }}"
+              # profiles: ["core", "all"] # seams to need <=v3.9
+              restart: always
+              # read_only: true
+              security_opt:
+                - no-new-privileges:true
+              privileged: false
+              user: "{{ '{{ ' }}{{ role_name.split('/')[-1] }}_ugid | default({% raw %}docker.container_internal_ugid{% endraw %}){{ ' }}' }}:{{ '{{ ' }}{{ role_name.split('/')[-1] }}_ugid | default({% raw %}docker.container_internal_ugid{% endraw %}) }}"
+              userns_mode: "{% raw %}{{ 'host' if {% endraw %}{{ role_name.split('/')[-1] }}_create_with_userns | default(true) | bool == false else 'remap' }}"
+              # entrypoint:
+              # command:
+                # - --configFile=/etc/traefik/traefik.yml
+              # extra_hosts:
+                # - "{% raw %}authelia.{{ domain_1 }}:{{ vm10_ingress.ip }}{% endraw %}"
+              networks: >-
+                {{ '{{' }}{}
+                  | combine(
+                    {
+                      "socketproxy_net": {
+                        "ipv4_address": {{ role_name.split('/')[-1] ~ '_socketproxy_net.' ~ role_name.split('/')[-1].replace('dc_', '') ~ '_ip' }}
+                      }
+                    } if {{ role_name.split('/')[-1] ~ '_use_socketproxy | default(true)' }} else {})
+                  | combine(
+                    {
+                      "app_net": {
+                        "ipv4_address": {{ role_name.split('/')[-1] ~ '_net.' ~ role_name.split('/')[-1].replace('dc_', '') ~ '_ip' }}
+                      }
+                    })
+                  | combine(
+                    {
+                      "traefik_net": {
+                        "ipv4_address": dc_traefik_net.{{ role_name.split('/')[-1].replace('dc_', '') }}_ip
+                      }
+                    })
+                {{ '}}' }}
+              ports:
+                - "{{ '{{ ' ~ role_name.split('/')[-1] ~ '_web_port' ~ ' }}' }}:{{ '{{ ' ~ role_name.split('/')[-1] ~ '_web_port' ~ ' }}' }}"
+              volumes:
+                - "{{ '{{' }} path {{ '}}' }}/data:/app/data"
+              # tmpfs:
+                # - /run
+              secrets:
+                - my_secret
+              environment:
+                CONTAINER_VARIABLE_FILE: "/run/secrets/my_secret"
+              labels:
+
+
+# ? ######################################################################################## #
+# *                                           Notes                                          #
+# ? ######################################################################################## #

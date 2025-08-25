@@ -1,0 +1,102 @@
+---
+# Northern-Lights-Platform/.pre-commit-config.yaml
+# Pre-commit hooks for code quality enforcement
+
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+# Skip hooks in CI/CD if needed
+ci:
+  skip: []
+  # Optionally auto-update dependencies monthly
+  autoupdate_schedule: monthly
+
+repos:
+  # Ansible-specific hooks
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v24.7.0 # Use latest stable version
+    hooks:
+      - id: ansible-lint
+        files: ^ansible/
+        args: ["--force-color"]
+        additional_dependencies:
+          - ansible-core>=2.15.0
+          - yamllint>=1.33.0
+
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        files: ^ansible/.*\.(yaml|yml)$
+        args: ["-c", "ansible/.yamllint"]
+
+  # General file fixes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$ # Markdown files can have meaningful trailing spaces
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ["--unsafe"] # Allow custom tags (Ansible uses !vault)
+        files: \.(yaml|yml)$
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # JSON formatting
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-json
+      - id: pretty-format-json
+        args: ["--autofix", "--indent=2"]
+        exclude: '(\.vscode/.*|package-lock\.json)'
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.41.0
+    hooks:
+      - id: markdownlint
+        args: ["--fix"]
+        files: \.(md|markdown)$
+
+  # Shell script checks (if you have any)
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        files: \.(sh|bash)$
+
+  # Python formatting (for any Python scripts in Ansible)
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        language_version: python3.12
+        files: ^ansible/.*\.py$
+
+  # Secrets detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: '(\.lock$|package-lock\.json|\.secrets\.baseline)'
+
+  # Prettier for general formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types_or: [css, javascript, jsx, typescript, tsx, json, yaml, markdown]
+        exclude: '(\.vscode/|ansible/.*\.yml$)' # Let ansible-lint handle Ansible files
+        additional_dependencies:
+          - prettier@3.1.0

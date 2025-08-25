@@ -1,0 +1,31 @@
+# Northern-Lights-Platform Ansible Version Requirements
+# This file documents the minimum required versions for the project
+# 
+# Installation on macOS:
+#   brew install ansible ansible-lint
+#   brew upgrade ansible ansible-lint  # To update
+#
+# Verify versions:
+#   ansible --version
+#   ansible-lint --version
+#   python3 --version
+
+# Minimum Required Versions
+ansible: 8.0.0
+ansible-lint: 6.22.0
+python: 3.11.0
+
+# Recommended Versions (as of 2024)
+# ansible: 9.0.0+
+# ansible-lint: 6.22.0+
+# python: 3.12.0+
+
+# Homebrew Installation Commands
+# brew install python@3.12
+# brew install ansible
+# brew install ansible-lint
+
+# Version Check Commands
+# ansible --version | head -1
+# ansible-lint --version
+# python3 --version

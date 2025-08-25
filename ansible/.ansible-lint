@@ -1,53 +1,105 @@
-# ansible/.ansible-lint
-# This file is the single source of truth for our project's Ansible code quality standards.
-# It ensures that linting is consistent, relevant, and free of unnecessary noise.
+---
+# Northern-Lights-Platform/ansible/.ansible-lint
+# Enterprise-grade Ansible linting configuration
+# This ensures consistent, high-quality Ansible code across the organization
 
-# Use the "production" profile for a stricter, more modern set of default rules.
-# It's a great starting point for new projects.
+# Use the "production" profile for strictest rules in enterprise environments
 profile: production
 
-# These are rules that we want to be aware of but don't consider critical enough to
-# fail a build. They will be displayed as warnings instead of errors.
+# Rules to warn about (won't fail CI/CD but will show warnings)
 warn_list:
-  - fqcn-builtins      # Warns if you use `command:` instead of `ansible.builtin.command:`. Good practice, but not a deal-breaker.
-  - no-handler         # Some simple roles genuinely don't need handlers.
-  - unnamed-task       # You should always name your tasks, but a warning is a good reminder.
+  - fqcn-builtins # Encourage FQCN but don't enforce strictly
+  - unnamed-task # Tasks should be named but not a blocker
+  - yaml[comments] # Comment formatting warnings
 
-# These are rules that we have consciously decided to disable for this project.
-# They are often stylistic or conflict with our chosen patterns.
+# Rules we consciously skip for practical reasons
 skip_list:
-  # - var-naming         # This rule is often too restrictive and produces many false positives with complex Jinja2 variables.
-  # - experimental       # As a homelab, we want the flexibility to use experimental features without linting errors.
-  - placeholderifempty
-  - meta-incorrect
-  # - name[template]
-  # - var-naming[no-role-prefix]
+  - yaml[line-length] # Delegated to yamllint with 120 char limit
+  - var-naming[no-role-prefix] # Allow flexibility in variable naming
+  - name[template] # Allow flexibility in template naming
 
-# A list of file paths to completely ignore during linting.
-# Crucial for preventing the linter from checking irrelevant files.
+# Enterprise-specific rules to enforce
+enable_list:
+  - args # Ensure proper module argument formatting
+  - fqcn[action] # Enforce fully qualified collection names
+  - schema[inventory] # Enforce inventory schema validation
+  - schema[playbook] # Enforce playbook schema validation
+  - schema[tasks] # Enforce task schema validation
+  - schema[vars] # Enforce variable schema validation
+  - schema[meta] # Enforce meta schema validation
+  - name[play] # Enforce play naming
+  - name[task] # Enforce task naming (as error, not warning)
+  - no-handler # Ensure handlers are used properly
+  - no-jinja-when # Avoid Jinja2 in when statements
+
+# File paths to exclude from linting
 exclude_paths:
-  - .venv/             # Never lint the virtual environment directory.
-  # - inventories/       # Inventories often contain structures that trigger false positives. We manage their quality manually.
-  - '**/*.j2'
-  - '**/meta/*'
-  - '**/tests/*'
+  - .venv/ # Virtual environments (if any)
+  - .git/ # Git directory
+  - .github/ # GitHub workflows (if any)
+  - .cache/ # Cache directories
+  - "**/.DS_Store" # macOS system files
+  - "**/*.retry" # Ansible retry files
+  - ".ansible_facts_cache/" # Facts cache directory
+  - molecule/ # Molecule test scenarios
+  - tests/ # Test directories
 
-# This allows us to teach the linter about our custom file types.
+# Enhanced file type detection for better linting
 kinds:
-  - yml: "**/*.yml.j2"  # Treat Jinja2 template files as YAML so they can be linted.
+  - playbook: "**/playbooks/**/*.yml"
+  - playbook: "**/playbooks/**/*.yaml"
+  - tasks: "**/tasks/**/*.yml"
+  - tasks: "**/tasks/**/*.yaml"
+  - handlers: "**/handlers/**/*.yml"
+  - handlers: "**/handlers/**/*.yaml"
+  - vars: "**/vars/**/*.yml"
+  - vars: "**/vars/**/*.yaml"
+  - defaults: "**/defaults/**/*.yml"
+  - defaults: "**/defaults/**/*.yaml"
+  - meta: "**/meta/**/*.yml"
+  - meta: "**/meta/**/*.yaml"
+  - inventory: "**/inventories/**/*.yml"
+  - inventory: "**/inventories/**/*.yaml"
+  - requirements: "**/requirements.yml"
+  - requirements: "**/requirements.yaml"
+  - yaml: "**/*.yml.j2" # Jinja2 templates
+  - yaml: "**/*.yaml.j2" # Jinja2 templates
 
-# Tell the linter to trust that certain modules exist, even if they are from custom
-# collections or it can't find them locally. This is essential for avoiding errors
-# with collections like `community.general`.
+# Mock modules for collections that might not be installed locally
 mock_modules:
   - community.general.proxmox_vm
+  - community.general.proxmox_kvm
   - community.docker.docker_compose_v2
+  - community.docker.docker_compose
+  - community.general.docker_container
+  - community.general.docker_network
+  - community.general.docker_volume
 
-# Increase the verbosity to get more detailed output on errors.
-verbosity: 1
+# Mock roles for testing
+mock_roles:
+  - geerlingguy.docker
+  - geerlingguy.security
 
-# Run in offline mode to prevent ansible-galaxy lookups and improve performance,
-# especially in CI/CD environments.
-offline: true
+# Performance and behavior settings
+verbosity: 1 # Moderate verbosity for useful output
+offline: false # Enable for better collection detection
+use_default_rules: true
+progressive: true # Show progress bar for better UX
+strict: true # Strict mode for enterprise environments
+write_list: # Create list of files to be fixed
+  - all
 
-# # https://ansible.readthedocs.io/projects/lint/configuring/#ansible-lint-configuration
+# Task name formatting requirements
+task_name_prefix: "{stem} | " # Enforce consistent task naming
+
+# Variable naming patterns
+var_naming_pattern: "^[a-z_][a-z0-9_]*$"
+# Note: Line length is handled by yamllint (120 chars)
+# Collections should be installed via requirements.yml
+# Example collections to use:
+#   - community.general
+#   - community.docker
+#   - ansible.posix
+#   - ansible.utils
+
+# Documentation: https://ansible.readthedocs.io/projects/lint/configuring/

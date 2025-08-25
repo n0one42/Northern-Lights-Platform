@@ -1,9 +1,46 @@
 {
-  "printWidth": 160,
+  "printWidth": 120,
   "tabWidth": 2,
   "useTabs": false,
-  "singleQuote": true,
-  "trailingComma": "all",
+  "singleQuote": false,
+  "quoteProps": "as-needed",
+  "jsxSingleQuote": false,
+  "trailingComma": "es5",
+  "bracketSpacing": true,
+  "bracketSameLine": false,
+  "arrowParens": "always",
+  "proseWrap": "preserve",
+  "htmlWhitespaceSensitivity": "css",
   "endOfLine": "lf",
-  "proseWrap": "always"
+  "embeddedLanguageFormatting": "auto",
+  "overrides": [
+    {
+      "files": ["*.yml", "*.yaml"],
+      "options": {
+        "parser": "yaml",
+        "singleQuote": false,
+        "bracketSpacing": true,
+        "proseWrap": "preserve"
+      }
+    },
+    {
+      "files": "ansible/**/*.{yml,yaml}",
+      "options": {
+        "parser": "yaml"
+      }
+    },
+    {
+      "files": "*.md",
+      "options": {
+        "proseWrap": "always",
+        "printWidth": 120
+      }
+    },
+    {
+      "files": "*.json",
+      "options": {
+        "trailingComma": "none"
+      }
+    }
+  ]
 }

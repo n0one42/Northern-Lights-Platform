@@ -1,0 +1,56 @@
+# Northern-Lights-Platform/.editorconfig
+# EditorConfig helps maintain consistent coding styles for multiple developers
+# working on the same project across various editors and IDEs.
+# root = true indicates that this is the root of the project.
+root = true
+
+[*]
+# Universal settings for all files
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 120
+
+[*.py]
+# Python-specific settings
+indent_style = space
+indent_size = 4
+max_line_length = 120
+
+[*.{yml,yaml}]
+# YAML files (including Ansible)
+indent_style = space
+indent_size = 2
+max_line_length = 120
+quote_type = double
+
+[*.{json,jsonc}]
+# JSON files
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+[*.{tf,tfvars,hcl}]
+# Terraform files
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+[*.md]
+# Markdown files often have intentional trailing whitespace for line breaks
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = 120
+
+[*.sh]
+# Shell scripts
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+[Makefile]
+# Makefiles require tabs
+indent_style = tab
+indent_size = 4

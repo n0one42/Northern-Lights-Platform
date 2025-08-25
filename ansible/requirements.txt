@@ -1,0 +1,33 @@
+# Northern-Lights-Platform Ansible Requirements
+# These are the minimum versions required for enterprise-grade Ansible operations
+# 
+# For local development on macOS:
+#   brew install ansible ansible-lint
+#
+# For CI/CD or other environments, use this file with pip:
+#   pip install -r requirements.txt
+
+# Core Ansible
+ansible>=8.0.0
+ansible-core>=2.15.0
+
+# Linting and validation
+ansible-lint>=6.22.0
+yamllint>=1.33.0
+
+# Testing framework (optional but recommended)
+molecule>=6.0.0
+molecule-plugins[docker]>=23.5.0
+
+# Container-based execution (optional)
+ansible-navigator>=3.5.0
+ansible-builder>=3.0.0
+
+# Common collections dependencies
+jmespath>=1.0.1  # Required for json_query filter
+netaddr>=0.9.0   # Required for network filters
+passlib>=1.7.4   # Required for password hashing
+
+# Development tools
+jinja2>=3.1.2
+pyyaml>=6.0

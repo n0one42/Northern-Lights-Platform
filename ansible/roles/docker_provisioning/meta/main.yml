@@ -1,0 +1,47 @@
+# ansible/roles/docker_provisioning/meta/main.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                          Docker Provisioning Role - Metadata                              * #
+# * ---------------------------------------------------------------------------------------- * #
+
+galaxy_info:
+  role_name: docker_provisioning
+  author: Northern-Lights-Platform Team
+  description: Production-ready Docker CE provisioning with three-pillar security model
+  company: Northern-Lights-Platform
+  license: BSD
+  min_ansible_version: "2.12"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy # 22.04
+        - focal # 20.04
+        - noble # 24.04
+    - name: Debian
+      versions:
+        - bullseye # 11
+        - bookworm # 12
+
+  galaxy_tags:
+    - docker
+    - containers
+    - security
+    - userns
+    - hardening
+    - provisioning
+    - infrastructure
+    - devops
+    - cloud
+    - system
+    - northernlights
+
+dependencies:
+  []
+  # No role dependencies - this role is self-contained
+  # However, it requires certain Ansible collections
+
+collections:
+  - ansible.builtin
+  - ansible.posix
+  - community.general

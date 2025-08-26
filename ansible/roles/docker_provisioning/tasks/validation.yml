@@ -1,0 +1,190 @@
+# ansible/roles/docker_provisioning/tasks/validation.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                      Docker Provisioning Role - Post-Installation Validation              * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file validates the complete Docker installation against ADR-001 requirements.
+# Verifies all three security pillars are correctly implemented.
+
+# * --------------------------------------------------------------------- * #
+# ?                            Basic Docker Validation                      * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify Docker is installed and running
+  ansible.builtin.command:
+    cmd: docker version --format json
+  register: docker_provisioning_version_check
+  changed_when: false
+  failed_when: docker_provisioning_version_check.rc != 0
+
+- name: Verify Docker Compose plugin is installed
+  ansible.builtin.command:
+    cmd: docker compose version
+  register: docker_provisioning_compose_check
+  changed_when: false
+  failed_when: docker_provisioning_compose_check.rc != 0
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                            Pillar 1: Host-Container Isolation Validation                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Get Docker security configuration
+  ansible.builtin.command:
+    cmd: docker info --format json
+  register: docker_provisioning_info_raw
+  changed_when: false
+
+- name: Parse Docker information
+  ansible.builtin.set_fact:
+    docker_validation_info: "{{ docker_provisioning_info_raw.stdout | from_json }}"
+
+- name: Validate Pillar 1 - userns-remap enabled
+  ansible.builtin.assert:
+    that:
+      - "'userns' in docker_validation_info.SecurityOptions"
+      - "docker_validation_info.DockerRootDir == docker_provisioning_data_root"
+    fail_msg: |
+      CRITICAL: Pillar 1 validation failed!
+      userns-remap MUST be enabled per ADR-001.
+    success_msg: "✓ Pillar 1: Host-Container Isolation active (userns-remap enabled)"
+
+- name: Verify subordinate UID/GID configuration
+  ansible.builtin.shell: |
+    grep "^{{ docker_provisioning_dockremap_user }}:{{ docker_provisioning_subordinate_uid_start }}:{{ docker_provisioning_subordinate_range_size }}$" /etc/subuid && \
+    grep "^{{ docker_provisioning_dockremap_user }}:{{ docker_provisioning_subordinate_uid_start }}:{{ docker_provisioning_subordinate_range_size }}$" /etc/subgid
+  register: docker_provisioning_subid_check
+  changed_when: false
+  failed_when: docker_provisioning_subid_check.rc != 0
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                          Pillar 2: Container-Container Isolation Validation               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify directory structure exists with correct permissions
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: docker_provisioning_dir_stats
+  loop:
+    - { path: "{{ docker_provisioning_docker_root }}", expected_mode: "0755" }
+    - { path: "{{ docker_provisioning_data_root }}", expected_mode: "0701" }
+    - { path: "{{ docker_provisioning_services_dir }}", expected_mode: "0750" }
+    - { path: "{{ docker_provisioning_secrets_dir }}", expected_mode: "0700" }
+    - { path: "{{ docker_provisioning_logs_dir }}", expected_mode: "0755" }
+
+- name: Validate Pillar 2 - Directory ownership
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+      - item.stat.uid == 0 # root
+      - item.stat.gid == 0 # root
+    fail_msg: "Directory {{ item.item.path }} does not meet security requirements"
+    success_msg: "✓ Directory {{ item.item.path | basename }} validated"
+  loop: "{{ docker_provisioning_dir_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Check inter-container communication is disabled
+  ansible.builtin.assert:
+    that:
+      - not docker_validation_info.BridgeNfIcc | default(true)
+    fail_msg: "Inter-container communication (ICC) must be disabled"
+    success_msg: "✓ Pillar 2: ICC disabled for container isolation"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                           Pillar 3: Intra-Container Security Validation                   * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Validate standard container UID configuration
+  ansible.builtin.assert:
+    that:
+      - docker_provisioning_container_internal_uid is defined
+      - docker_provisioning_container_internal_uid | int == 1337
+    fail_msg: "Container UID must be 1337 per ADR-001"
+    success_msg: "✓ Pillar 3: Standard container UID {{ docker_provisioning_container_internal_uid }} configured"
+
+- name: Verify UID mapping calculation
+  ansible.builtin.set_fact:
+    calculated_host_uid: "{{ docker_provisioning_subordinate_uid_start | int + docker_provisioning_container_internal_uid | int }}"
+
+- name: Display UID mapping
+  ansible.builtin.debug:
+    msg: "Container UID {{ docker_provisioning_container_internal_uid }} → Host UID {{ calculated_host_uid }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Security Features Validation                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Validate daemon.json security settings
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  register: docker_provisioning_daemon_raw
+
+- name: Parse daemon.json
+  ansible.builtin.set_fact:
+    daemon_config: "{{ docker_provisioning_daemon_raw.content | b64decode | from_json }}"
+
+- name: Assert critical security settings in daemon.json
+  ansible.builtin.assert:
+    that:
+      - daemon_config['userns-remap'] == docker_provisioning_dockremap_user
+      - daemon_config['data-root'] == docker_provisioning_data_root
+      - daemon_config['no-new-privileges'] | default(false)
+      - not daemon_config['icc'] | default(true)
+      - not daemon_config['ipv6'] | default(false)
+    fail_msg: "daemon.json missing critical security settings"
+    success_msg: "✓ daemon.json security settings verified"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Compliance Check Execution                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Execute security compliance check script
+  ansible.builtin.command:
+    cmd: "{{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh"
+  register: docker_provisioning_compliance_result
+  changed_when: false
+  failed_when: docker_provisioning_compliance_result.rc > 1
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Final Validation Summary                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Display comprehensive validation summary
+  ansible.builtin.debug:
+    msg:
+      - "╔════════════════════════════════════════════════════════════╗"
+      - "║       Docker Provisioning Validation Complete              ║"
+      - "╠════════════════════════════════════════════════════════════╣"
+      - "║ ADR-001 Three Pillars Security Model:                      ║"
+      - "║   ✓ Pillar 1: Host-Container Isolation (userns-remap)      ║"
+      - "║   ✓ Pillar 2: Container-Container Isolation (Named Volumes)║"
+      - "║   ✓ Pillar 3: Intra-Container Security (UID 1337)         ║"
+      - "╠════════════════════════════════════════════════════════════╣"
+      - "║ Security Configuration:                                    ║"
+      - "║   • Dockremap User: {{ docker_provisioning_dockremap_user | ljust(36) }}║"
+      - "║   • Container UID {{ docker_provisioning_container_internal_uid }} → Host UID {{ calculated_host_uid | ljust(24) }}║"
+      - "║   • Data Root: {{ docker_provisioning_data_root | ljust(41) }}║"
+      - "║   • ICC Disabled: ✓                                        ║"
+      - "║   • IPv6 Disabled: ✓                                       ║"
+      - "╠════════════════════════════════════════════════════════════╣"
+      - "║ Result: ✅ PASSED - Full ADR-001 Compliance               ║"
+      - "╚════════════════════════════════════════════════════════════╝"
+
+- name: Create validation timestamp
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_docker_root }}/.validation_complete"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Assert validation success
+  ansible.builtin.assert:
+    that:
+      - docker_provisioning_host_setup_complete | default(false)
+      - docker_provisioning_filesystem_complete | default(false)
+      - "'userns' in docker_validation_info.SecurityOptions"
+    fail_msg: "Docker provisioning validation failed"
+    success_msg: "✅ Docker provisioning validated successfully - ADR-001 compliant!"

@@ -1,13 +1,57 @@
 {
-    "bip": "{{ docker_net.bip }}",
-    "mtu": 1500,
-    "default-address-pools": {{ docker_net.default_address_pools | to_nice_json }},
-    "ipv6": false,
-    "storage-driver": "overlay2",
-    "userns-remap": "{{ docker_provisioning_docker_user_name }}",
-    "log-driver": "json-file",
-    "log-opts": {
-      "max-size": "10m",
-      "max-file": "3"
+  "userns-remap": "{{ docker_provisioning_dockremap_user }}",
+  "data-root": "{{ docker_provisioning_data_root }}",
+  "bip": "{{ docker_provisioning_docker_bip }}",
+  "mtu": {{ docker_provisioning_mtu }},
+  "default-address-pools": {{ docker_provisioning_default_address_pools | to_nice_json }},
+  "ipv6": {{ docker_provisioning_ipv6_enabled | lower }},
+  "storage-driver": "{{ docker_provisioning_storage_driver }}",
+  "log-driver": "{{ docker_provisioning_log_driver }}",
+  "log-opts": {
+    "max-size": "{{ docker_provisioning_log_max_size }}",
+    "max-file": "{{ docker_provisioning_log_max_file }}",
+    "compress": "true",
+    "labels": "environment,role,service"
+  },
+  "live-restore": {{ docker_provisioning_live_restore | lower }},
+  "default-runtime": "{{ docker_provisioning_default_runtime | default('runc') }}",
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "features": {
+    "buildkit": true
+  },
+  "experimental": false,
+  "metrics-addr": "",
+  "no-new-privileges": true,
+  "seccomp-profile": "",
+  "selinux-enabled": false,
+  "userland-proxy": false,
+  "fixed-cidr": "",
+  "default-ulimits": {
+    "nofile": {
+      "Hard": 1048576,
+      "Soft": 1048576
     }
+  },
+  "max-concurrent-downloads": 10,
+  "max-concurrent-uploads": 5,
+  "shutdown-timeout": 30,
+  "debug": false,
+  "hosts": [],
+  "tls": false,
+  "tlsverify": false,
+  "insecure-registries": [],
+  "registry-mirrors": [],
+  "authorization-plugins": [],
+  "dns": [],
+  "dns-opts": [],
+  "dns-search": [],
+  "default-gateway": "",
+  "default-gateway-v6": "",
+  "icc": false,
+  "iptables": true,
+  "ip-forward": true,
+  "ip-masq": true,
+  "bridge": "",
+  "default-network-opts": {},
+  "default-shm-size": "64M"
 }

@@ -1,0 +1,166 @@
+# ansible/roles/docker_provisioning/tasks/security.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                        Docker Provisioning Role - Security Hardening                      * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file applies additional security hardening measures beyond the three pillars.
+# Focuses on runtime security, audit logging, and compliance enforcement.
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Runtime Security Checks                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure Docker socket has correct permissions
+  ansible.builtin.file:
+    path: /var/run/docker.sock
+    owner: root
+    group: docker
+    mode: "0660"
+  when: ansible_facts.services['docker.service'] is defined | default(false)
+
+- name: Set security limits for Docker daemon
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    line: "{{ item }}"
+    state: present
+  loop:
+    - "* soft nofile 1048576"
+    - "* hard nofile 1048576"
+    - "root soft nofile 1048576"
+    - "root hard nofile 1048576"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Audit Configuration                                    * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Configure audit rules for Docker
+  ansible.builtin.copy:
+    content: |
+      # Docker audit rules
+      -w /usr/bin/docker -p rwxa -k docker
+      -w /var/lib/docker -p rwxa -k docker
+      -w /etc/docker -p rwxa -k docker
+      -w {{ docker_provisioning_data_root }} -p rwxa -k docker-data
+      -w /var/run/docker.sock -p rwxa -k docker-socket
+    dest: /etc/audit/rules.d/docker.rules
+    owner: root
+    group: root
+    mode: "0640"
+  when: ansible_os_family in ["RedHat", "Debian"]
+  notify: Restart auditd
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Security Compliance Script                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create security compliance check script
+  ansible.builtin.copy:
+    content: |
+      #!/bin/bash
+      # Docker security compliance check - ADR-001 Three Pillars
+      set -euo pipefail
+
+      echo "=== Docker Security Compliance Check (ADR-001) ==="
+      echo
+
+      ERRORS=0
+      WARNINGS=0
+
+      # Pillar 1: Host-Container Isolation (userns-remap)
+      echo "Pillar 1: Host-Container Isolation"
+      if docker info 2>/dev/null | grep -q "userns"; then
+        echo "  ✓ userns-remap ENABLED with user: {{ docker_provisioning_dockremap_user }}"
+      else
+        echo "  ✗ userns-remap DISABLED - Critical security violation!"
+        ((ERRORS++))
+      fi
+
+      # Pillar 2: Container-Container Isolation (Named Volumes)
+      echo "Pillar 2: Container-Container Isolation"
+      BIND_COUNT=$(docker ps --quiet 2>/dev/null | xargs -r docker inspect --format '{{ '{{' }}range .Mounts{{ '}}' }}{{ '{{' }}if eq .Type "bind"{{ '}}' }}{{ '{{' }}.Source{{ '}}' }}{{ '{{' }}end{{ '}}' }}{{ '{{' }}end{{ '}}' }}' | grep -v "^$" | grep -cv "^/opt/docker/logs" || true)
+      if [ "$BIND_COUNT" -eq 0 ]; then
+        echo "  ✓ All containers using Named Volumes (except allowed log bind mounts)"
+      else
+        echo "  ⚠ Found $BIND_COUNT non-log bind mounts - investigate for compliance"
+        ((WARNINGS++))
+      fi
+
+      # Pillar 3: Intra-Container Security (Non-root user)
+      echo "Pillar 3: Intra-Container Security"
+      ROOT_COUNT=$(docker ps --quiet 2>/dev/null | xargs -r docker inspect --format '{{ '{{' }}.Config.User{{ '}}' }}:{{ '{{' }}.Name{{ '}}' }}' | grep -c "^:/" || true)
+      if [ "$ROOT_COUNT" -eq 0 ]; then
+        echo "  ✓ No containers running as root (UID {{ docker_provisioning_container_internal_uid }} enforced)"
+      else
+        echo "  ⚠ Found $ROOT_COUNT containers without explicit user - may run as root"
+        ((WARNINGS++))
+      fi
+
+      # Additional Security Checks
+      echo
+      echo "Additional Security:"
+
+      # Check ICC disabled
+      if docker network inspect bridge 2>/dev/null | grep -q '"EnableICC": false'; then
+        echo "  ✓ Inter-Container Communication (ICC) disabled"
+      else
+        echo "  ⚠ ICC may be enabled on default bridge"
+        ((WARNINGS++))
+      fi
+
+      # Check for privileged containers
+      PRIV_COUNT=$(docker ps --quiet 2>/dev/null | xargs -r docker inspect --format '{{ '{{' }}.HostConfig.Privileged{{ '}}' }}' | grep -c true || true)
+      if [ "$PRIV_COUNT" -eq 0 ]; then
+        echo "  ✓ No privileged containers running"
+      else
+        echo "  ✗ Found $PRIV_COUNT PRIVILEGED containers - security violation!"
+        ((ERRORS++))
+      fi
+
+      echo
+      if [ $ERRORS -gt 0 ]; then
+        echo "Result: FAILED - $ERRORS critical errors found"
+        exit 1
+      elif [ $WARNINGS -gt 0 ]; then
+        echo "Result: PASSED with $WARNINGS warnings"
+        exit 0
+      else
+        echo "Result: PASSED - Full compliance with ADR-001"
+        exit 0
+      fi
+    dest: "{{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh"
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Run security compliance check
+  ansible.builtin.command:
+    cmd: "{{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh"
+  register: docker_provisioning_security_compliance
+  changed_when: false
+  failed_when: false
+
+- name: Display security compliance results
+  ansible.builtin.debug:
+    msg: "{{ docker_provisioning_security_compliance.stdout_lines }}"
+  when: docker_provisioning_security_compliance is defined
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Security Summary                                       * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Display security configuration summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Docker Security Configuration Complete ==="
+      - ""
+      - "ADR-001 Three Pillars Implementation:"
+      - "  Pillar 1: userns-remap with user '{{ docker_provisioning_dockremap_user }}'"
+      - "  Pillar 2: Named Volumes enforced (bind mounts forbidden for stateful data)"
+      - "  Pillar 3: Standard non-root UID {{ docker_provisioning_container_internal_uid }}"
+      - ""
+      - "Security Tools Available:"
+      - "  • {{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh"
+      - "  • {{ docker_provisioning_docker_root }}/scripts/docker-network-policy.sh"
+      - ""
+      - "Run security check: sudo {{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh"

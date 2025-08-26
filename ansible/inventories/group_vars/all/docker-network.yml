@@ -1,0 +1,464 @@
+---
+# inventories/group_vars/all/docker-network.yml
+# yamllint disable rule:colons
+# ? ######################################################################################## #
+# !                                    Docker Networking                                     #
+# ? ######################################################################################## #
+
+vm_number: "{{ 100 + vm_id | int }}"  # Define the VM number (e.g., 142 for VM 42)
+docker_root_cidr: 10.{{ vm_number | int }}.0.0/16
+
+# # vm 42 => 10.142.0.0/16 subnetted into 10.142.0.0/19 => 8 subnets. Each env has its own subnet
+docker_env_cidr:                                      # ?  SubnetID   Subnet               Host Address Range           Broadcast Address   CIDR
+  prod:     "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 0) }}"  # 10.142.0.0    10.142.0.1    - 10.142.31.254     10.142.31.255       10.142.0.0/19
+  placeh1:  "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 1) }}"  # 10.142.32.0   10.142.32.1   - 10.142.63.254     10.142.63.255       10.142.32.0/19
+  beta:     "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 2) }}"  # 10.142.64.0   10.142.64.1   - 10.142.95.254     10.142.95.255       10.142.64.0/19
+  placeh2:  "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 3) }}"  # 10.142.96.0   10.142.96.1   - 10.142.127.254    10.142.127.255      10.142.96.0/19
+  dev:      "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 4) }}"  # 10.142.128.0  10.142.128.1  - 10.142.159.254    10.142.159.255      10.142.128.0/19
+  placeh3:  "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 5) }}"  # 10.142.160.0  10.142.160.1  - 10.142.191.254    10.142.191.255      10.142.160.0/19
+  demo:     "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 6) }}"  # 10.142.192.0  10.142.192.1  - 10.142.223.254    10.142.223.255      10.142.192.0/19
+  placeh4:  "{{ docker_root_cidr | ansible.utils.ipsubnet(19, 7) }}"  # 10.142.224.0  10.142.224.1  - 10.142.255.254    10.142.255.255      10.142.224.0/19
+
+
+# * ---------------------------------- >>> /24 <<< ---------------------------------- * #
+docker_net:
+  bip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 0) | ansible.utils.ipaddr('net') | ansible.utils.ipaddr('1') }}"  # 10.142.0.1/24 (prod)
+  # dns_server: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 0) | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}" # 10.142.0.1 (prod)  # by default its the docker gw
+  default_address_pools:
+    - { base: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 1) }}", size: 28 } # 10.142.1.0/28 (prod)
+    # - { base: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 2) }}", size: 28 } # 10.142.2.0/28 (prod)
+    # - { base: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 3) }}", size: 28 } # 10.142.3.0/28 (prod)
+# Placeholder for ansible.utils.ipsubnet(24, 2/4-7)
+dc_traefik_net:
+  name:             "traefik_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) }}" # 10.142.8.0/24 (prod)
+  adguard_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}"  # 10.142.8.2 (prod)
+  traefik_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}"  # 10.142.8.3 (prod)
+  crowdsec_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('4') | ansible.utils.ipaddr('address') }}"  # 10.142.8.4 (prod)
+  authelia_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}"  # 10.142.8.5 (prod)
+  loki_ip:          "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}"  # 10.142.8.6 (prod)
+  grafana_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('7') | ansible.utils.ipaddr('address') }}"  # 10.142.8.7 (prod)
+  cadvisor_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('8') | ansible.utils.ipaddr('address') }}"  # 10.142.8.8 (prod)
+  prometheus_ip:    "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('9') | ansible.utils.ipaddr('address') }}"  # 10.142.8.9 (prod)
+  vector_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('10') | ansible.utils.ipaddr('address') }}" # 10.142.8.10 (prod)
+  homepage_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('11') | ansible.utils.ipaddr('address') }}" # 10.142.8.11 (prod)
+  it_tools_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('12') | ansible.utils.ipaddr('address') }}" # 10.142.8.12 (prod)
+  vaultwarden_ip:   "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('13') | ansible.utils.ipaddr('address') }}" # 10.142.8.13 (prod)
+  kestra_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('14') | ansible.utils.ipaddr('address') }}" # 10.142.8.14 (prod)
+  standalone_pg_ip: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('15') | ansible.utils.ipaddr('address') }}" # 10.142.8.15 (prod)
+  n8n_ip:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('16') | ansible.utils.ipaddr('address') }}" # 10.142.8.16 (prod)
+  langflow_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('17') | ansible.utils.ipaddr('address') }}" # 10.142.8.17 (prod)
+  openwebui_ip:     "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('18') | ansible.utils.ipaddr('address') }}" # 10.142.8.18 (prod)
+  qdrant_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('19') | ansible.utils.ipaddr('address') }}" # 10.142.8.19 (prod)
+  pqadmin_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('20') | ansible.utils.ipaddr('address') }}" # 10.142.8.20 (prod)
+  nocodb_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('21') | ansible.utils.ipaddr('address') }}" # 10.142.8.21 (prod)
+  mssql_ip:         "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('22') | ansible.utils.ipaddr('address') }}" # 10.142.8.22 (prod)
+  cloudbeaver_ip:   "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 8) | ansible.utils.ipaddr('23') | ansible.utils.ipaddr('address') }}" # 10.142.8.23 (prod)
+dc_reserved_by_z_1_24:
+  subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(24, 9) | ansible.utils.ipaddr('24') | ansible.utils.ipaddr('address') }}" # 10.142.9.24 (prod)
+
+# * ---------------------------------- >>> /26 <<< ---------------------------------- * #
+# dc_app1_26_net:
+#   name: "app1_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(26, 64) }}"  # 10.142.16.0/26 (prod)
+# dc_app2_26_net:
+#   name: "app2_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(26, 65) }}"  # 10.142.16.64/26 (prod)
+# dc_app31_26_net:
+#   name: "app31_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(26, 94) }}"  # 10.142.23.128/26 (prod)
+# dc_app32_26_net:
+#   name: "app32_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(26, 95) }}"  # 10.142.23.192/26 (prod)
+
+
+# * ---------------------------------- >>> /28 <<< ---------------------------------- * #
+dc_crowdsec_net:
+  name:             "crowdsec_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 384) }}"  # 10.142.24.0/28 (prod)
+  crowdsec_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 384) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.2 (prod)
+  traefik_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 384) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.3 (prod)
+dc_authelia_net:
+  name:             "authelia_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 385) }}"  # 10.142.24.16/28 (prod)
+  authelia_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 385) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.18 (prod)
+  db_ip:            "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 385) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.19 (prod)
+  redis_ip:         "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 385) | ansible.utils.ipaddr('4') | ansible.utils.ipaddr('address') }}" # 10.142.24.20 (prod)
+dc_grafana_net:
+  name:             "grafana_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) }}"  # 10.142.24.32/28 (prod)
+  grafana_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.34 (prod)
+  db_ip:            "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.35 (prod)
+  loki_ip:          "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('4') | ansible.utils.ipaddr('address') }}" # 10.142.24.36 (prod)
+  prometheus_ip:    "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}" # 10.142.24.37 (prod)
+  vector_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}" # 10.142.24.38 (prod)
+  cadvisor_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('7') | ansible.utils.ipaddr('address') }}" # 10.142.24.39 (prod)
+  promtail_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('8') | ansible.utils.ipaddr('address') }}" # 10.142.24.40 (prod)
+  nodeexporter_ip:  "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('9') | ansible.utils.ipaddr('address') }}" # 10.142.24.41 (prod)
+  influxdb_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('10') | ansible.utils.ipaddr('address') }}" # 10.142.24.42 (prod)
+  elasticsearch_ip: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('11') | ansible.utils.ipaddr('address') }}" # 10.142.24.43 (prod)
+  testing_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('12') | ansible.utils.ipaddr('address') }}" # 10.142.24.44 (prod)
+  wud_ip:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 386) | ansible.utils.ipaddr('13') | ansible.utils.ipaddr('address') }}" # 10.142.24.45 (prod)
+dc_vaultwarden_net:
+  name:             "vaultwarden_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 387) }}"  # 10.142.24.48/28 (prod)
+  vaultwarden_ip:   "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 387) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.50 (prod)
+  db_ip:            "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 387) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.51 (prod)
+dc_kestra_net:
+  name:             "kestra_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 388) }}"  # 10.142.24.64/28 (prod)
+  kestra_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 388) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.66 (prod)
+  db_ip:            "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 388) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.67 (prod)
+  pqadmin_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 388) | ansible.utils.ipaddr('4') | ansible.utils.ipaddr('address') }}" # 10.142.24.68 (prod)
+  nocodb_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 388) | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}" # 10.142.24.69 (prod)
+dc_n8n_net:
+  name:             "n8n_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) }}"  # 10.142.24.80/28 (prod)
+  n8n_ip:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.82 (prod)
+  db_ip:            "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.83 (prod)
+  redis_ip:         "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}" # 10.142.24.84 (prod)
+  qdrant_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) | ansible.utils.ipaddr('4') | ansible.utils.ipaddr('address') }}" # 10.142.24.85 (prod)
+  pqadmin_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}" # 10.142.24.86 (prod)
+  nocodb_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 389) | ansible.utils.ipaddr('7') | ansible.utils.ipaddr('address') }}" # 10.142.24.87 (prod)
+dc_langflow_net:
+  name:             "langflow_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) }}"  # 10.142.24.96/28 (prod)
+  langflow_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.24.98 (prod)
+  db_ip:            "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.24.99 (prod)
+  redis_ip:         "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) | ansible.utils.ipaddr('4') | ansible.utils.ipaddr('address') }}" # 10.142.24.100 (prod)
+  qdrant_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) | ansible.utils.ipaddr('5') | ansible.utils.ipaddr('address') }}" # 10.142.24.101 (prod)
+  pqadmin_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) | ansible.utils.ipaddr('6') | ansible.utils.ipaddr('address') }}" # 10.142.24.102 (prod)
+  nocodb_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 390) | ansible.utils.ipaddr('7') | ansible.utils.ipaddr('address') }}" # 10.142.24.103 (prod)
+# dc_app63_28_net:
+#   name: "app63_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 446) }}"  # 10.142.27.224/28 (prod)
+# dc_app64_28_net:
+#   name: "app64_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(28, 447) }}"  # 10.142.27.240/28 (prod)
+
+
+# * ---------------------------------- >>> /29 <<< ---------------------------------- * #
+dc_traefik_socketproxy_net:
+  name:             "traefik_socketproxy_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 896) }}"  # 10.142.28.0/29 (prod)
+  socketproxy_ip:   "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 896) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.28.2 (prod)
+  traefik_ip:       "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 896) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.28.3 (prod)
+dc_homepage_socketproxy_net:
+  name:             "homepage_socketproxy_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 897) }}"  # 10.142.28.8/29 (prod)
+  socketproxy_ip:   "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 897) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.28.10 (prod)
+  homepage_ip:      "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 897) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.28.11 (prod)
+dc_kestra_socketproxy_net:
+  name:             "kestra_socketproxy_net"
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 898) }}"  # 10.142.28.16/29 (prod)
+  socketproxy_ip:   "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 898) | ansible.utils.ipaddr('2') | ansible.utils.ipaddr('address') }}" # 10.142.28.18 (prod)
+  kestra_ip:        "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 898) | ansible.utils.ipaddr('3') | ansible.utils.ipaddr('address') }}" # 10.142.28.19 (prod)
+dc_reserved_by_z_1_29:
+  subnet:           "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 1010) }}"  # 10.142.31.160/29 (prod)
+
+# dc_app127_29_net:
+#   name: "app127_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 1022) }}"  # 10.142.31.232/29 (prod)
+# dc_app128_29_net:
+#   name: "app128_net"
+#   subnet: "{{ docker_env_cidr[env] | ansible.utils.ipsubnet(29, 1023) }}"  # 10.142.31.240/29 (prod)
+
+
+# ? ######################################################################################## #
+# !                                       Special cases                                      #
+# ? ######################################################################################## #
+# ? -----------------------------------------------------------------------------
+# *                                   Traefik                                   *
+# ? -----------------------------------------------------------------------------
+
+# dc_traefik_net_authentik_worker_ip: "{{ dc_traefik_net_base }}.6"
+# dc_traefik_net_authentik_ldap_ip: "{{ dc_traefik_net_base }}.7"
+# dc_traefik_net_cert_dumper_ip: "{{ dc_traefik_net_base }}.8"
+# dc_traefik_net_portainer_ip: "{{ dc_traefik_net_base }}.9"
+# dc_traefik_net_homepage_ip: "{{ dc_traefik_net_base }}.10"
+# dc_traefik_net_vaultwarden_ip: "{{ dc_traefik_net_base }}.11"
+# dc_traefik_net_grafana_ip: "{{ dc_traefik_net_base }}.12"
+# dc_traefik_net_firefox_ip: "{{ dc_traefik_net_base }}.13"
+# dc_traefik_net_jdownloader2_ip: "{{ dc_traefik_net_base }}.14"
+# dc_traefik_net_elasticsearch_ip: "{{ dc_traefik_net_base }}.15"
+# dc_traefik_net_wud_ip: "{{ dc_traefik_net_base }}.16"
+# dc_traefik_net_nodeexporter_ip: "{{ dc_traefik_net_base }}.17"
+# dc_traefik_net_promethus_ip: "{{ dc_traefik_net_base }}.18"
+# dc_traefik_net_promtail_ip: "{{ dc_traefik_net_base }}.19"
+# dc_traefik_net_loki_ip: "{{ dc_traefik_net_base }}.20"
+# dc_traefik_net_it_tools_ip: "{{ dc_traefik_net_base }}.21"
+
+
+# # ? ######################################################################################## #
+# # !                                      Socket Proies                                     #
+# # ? ######################################################################################## #
+# # ? -----------------------------------------------------------------------------
+# # *                                   Traefik                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.
+# dc_traefik_socketproxy_net_base: "{{ env_29_docker_subnets_base[0] }}"
+# dc_traefik_socketproxy_net_cidr: "{{ dc_traefik_socketproxy_net_base }}.0/29"
+
+# dc_traefik_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.2"
+# dc_traefik_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.3"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                   Promtail                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.8 - 10.120.x.15 # usable => 10.120.x.10 - 10.120.x.14
+# dc_promtail_socketproxy_net_address: "{{ core_socketproxy_net_base }}.8"
+# dc_promtail_socketproxy_net_cidr: "{{ dc_promtail_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# dc_promtail_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.10"
+# dc_promtail_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.11"
+
+# # ? -----------------------------------------------------------------------------
+# # *                            Whats-Up-Docker (WUD)                            *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.16 - 10.120.x.23 # usable => 10.120.x.18 - 10.120.x.22
+# dc_wud_socketproxy_net_address: "{{ core_socketproxy_net_base }}.16"
+# dc_wud_socketproxy_net_cidr: "{{ dc_wud_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# dc_wud_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.18"
+# dc_wud_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.19"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Telegraf                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.24 - 10.120.x.31 # usable => 10.120.x.26 - 10.120.x.30
+# dc_telegraf_socketproxy_net_address: "{{ core_socketproxy_net_base }}.24"
+# dc_telegraf_socketproxy_net_cidr: "{{ dc_telegraf_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# dc_telegraf_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.26"
+# dc_telegraf_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.27"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                   Vector                                    *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.32 - 10.120.x.39 # usable => 10.120.x.34 - 10.120.x.38
+# dc_vector_socketproxy_net_address: "{{ core_socketproxy_net_base }}.32"
+# dc_vector_socketproxy_net_cidr: "{{ dc_vector_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# dc_vector_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.34"
+# dc_vector_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.35"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Homepage                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.40 - 10.120.x.47 # usable => 10.120.x.42 - 10.120.x.46
+# dc_homepage_socketproxy_net_address: "{{ core_socketproxy_net_base }}.40"
+# dc_homepage_socketproxy_net_cidr: "{{ dc_homepage_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# dc_homepage_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.42"
+# dc_homepage_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.43"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Authentik                                  *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.48 - 10.120.x.55 # usable => 10.120.x.50 - 10.120.x.54
+# dc_authentik_socketproxy_net_address: "{{ core_socketproxy_net_base }}.48"
+# dc_authentik_socketproxy_net_cidr: "{{ dc_authentik_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# # dc_authentik_socketproxy_net_app_server_ip: "{{ core_socketproxy_net_base }}.51"  # not needed
+# dc_authentik_socketproxy_net_app_worker_ip: "{{ core_socketproxy_net_base }}.50"
+# dc_authentik_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.51"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Portainer                                  *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.120.x.56 - 10.120.x.63 # usable => 10.120.x.58 - 10.120.x.62
+# dc_portainer_socketproxy_net_address: "{{ core_socketproxy_net_base }}.56"
+# dc_portainer_socketproxy_net_cidr: "{{ dc_portainer_socketproxy_net_address }}/{{ core_socketproxy_net_prefix_length }}"
+
+# dc_portainer_socketproxy_net_app_ip: "{{ core_socketproxy_net_base }}.58"
+# dc_portainer_socketproxy_net_ip: "{{ core_socketproxy_net_base }}.59"
+
+
+# # ? ######################################################################################## #
+# # !                                            Apps                                          #
+# # ? ######################################################################################## #
+# # ? 10.130.x.0/28 => 0,16,32,48,64,80,96,112,128,144,160,176,192,208,224,240
+# # 10.130.x.0 - 10.130.x.15 # usable => 10.130.x.2 - 10.130.x.14
+# # 10.130.x.16 - 10.130.x.31 # usable => 10.130.x.18 - 10.130.x.30
+# # 10.130.x.32 - 10.130.x.47 # usable => 10.130.x.34 - 10.130.x.46
+# # ...
+# # 10.130.x.208 - 10.130.x.223 # usable => 10.130.x.210 - 10.130.x.222
+# # 10.130.x.224 - 10.130.x.239 # usable => 10.130.x.226 - 10.130.x.238
+# # 10.130.x.240 - 10.130.x.255 # usable => 10.130.x.242 - 10.130.x.254
+# core_apps_net_base: 10.130.{{ host_identifier }}
+# core_apps_net_prefix_length: 28
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Authelia                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.130.x.0 - 10.130.x.15 # usable => 10.130.x.2 - 10.130.x.14
+# dc_authelia_net_address: "{{ core_apps_net_base }}.0"
+# dc_authelia_net_cidr: "{{ dc_authelia_net_address }}/{{ core_apps_net_prefix_length }}"
+# dc_authelia_net_app_ip: "{{ core_apps_net_base }}.2"
+# dc_authelia_net_db_ip: "{{ core_apps_net_base }}.3"
+# dc_authelia_net_redis_ip: "{{ core_apps_net_base }}.4"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                 Vaultwarden                                 *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.130.x.16 - 10.130.x.31 # usable => 10.130.x.18 - 10.130.x.30
+# dc_vaultwarden_net_address: "{{ core_apps_net_base }}.16"
+# dc_vaultwarden_net_cidr: "{{ dc_vaultwarden_net_address }}/{{ core_apps_net_prefix_length }}"
+# dc_vaultwarden_net_app_ip: "{{ core_apps_net_base }}.18"
+# dc_vaultwarden_net_db_ip: "{{ core_apps_net_base }}.19"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                   Immich                                    *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.130.x.32 - 10.130.x.47 # usable => 10.130.x.34 - 10.130.x.46
+# dc_immich_net_address: "{{ core_apps_net_base }}.32"
+# dc_immich_net_cidr: "{{ dc_immich_net_address }}/{{ core_apps_net_prefix_length }}"
+# dc_immich_net_app_ip: "{{ core_apps_net_base }}.34"
+# dc_immich_net_db_ip: "{{ core_apps_net_base }}.35"
+# dc_immich_net_redis_ip: "{{ core_apps_net_base }}.36"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Crowdsec                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.130.x.48 - 10.130.x.63 # usable => 10.130.x.50 - 10.130.x.62
+# dc_crowdsec_net_name: "crowdsec_net"
+# dc_crowdsec_net_address: "{{ core_apps_net_base }}.48"
+# dc_crowdsec_net_cidr: "{{ dc_crowdsec_net_address }}/{{ core_apps_net_prefix_length }}"
+
+# dc_crowdsec_net.crowdsec_ip: "{{ core_apps_net_base }}.50"
+# dc_crowdsec_net_bouncer_ip: "{{ core_apps_net_base }}.51"
+# # dc_crowdsec_net_db_ip: "{{ core_apps_net_base }}.52"
+# # dc_crowdsec_net_redis_ip: "{{ core_apps_net_base }}.53"
+# dc_crowdsec_net_traefik_ip: "{{ core_apps_net_base }}.54"
+
+# # ? -----------------------------------------------------------------------------
+# # *                                  Authentik                                  *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.130.x.64 - 10.130.x.79 # usable => 10.130.x.66 - 10.130.x.78
+# dc_authentik_net_address: "{{ core_apps_net_base }}.64"
+# dc_authentik_net_cidr: "{{ dc_authentik_net_address }}/{{ core_apps_net_prefix_length }}"
+# dc_authentik_net_app_server_ip: "{{ core_apps_net_base }}.66"
+# dc_authentik_net_app_worker_ip: "{{ core_apps_net_base }}.67"
+# dc_authentik_net_db_ip: "{{ core_apps_net_base }}.68"
+# dc_authentik_net_redis_ip: "{{ core_apps_net_base }}.69"
+# # dc_authentik_net_ldap_ip: "{{ core_apps_net_base }}.70" # not needed
+
+# # ? -----------------------------------------------------------------------------
+# # *                                   Grafana                                   *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.130.x.80 - 10.130.x.95 # usable => 10.130.x.82 - 10.130.x.94
+# dc_grafana_net_address: "{{ core_apps_net_base }}.80"
+# dc_grafana_net_cidr: "{{ dc_grafana_net_address }}/{{ core_apps_net_prefix_length }}"
+# dc_grafana_net_app_ip: "{{ core_apps_net_base }}.82"
+# dc_grafana_net_db_ip: "{{ core_apps_net_base }}.83"
+# dc_grafana_net_loki_ip: "{{ core_apps_net_base }}.84"
+# dc_grafana_net_prometheus_ip: "{{ core_apps_net_base }}.85"
+# dc_grafana_net_vector_ip: "{{ core_apps_net_base }}.86"
+# dc_grafana_net_cadvisor_ip: "{{ core_apps_net_base }}.87"
+# dc_grafana_net_promtail_ip: "{{ core_apps_net_base }}.88"
+# dc_grafana_net_nodeexporter_ip: "{{ core_apps_net_base }}.89"
+# dc_grafana_net_influxdb_ip: "{{ core_apps_net_base }}.90"
+# dc_grafana_net_elasticsearch_ip: "{{ core_apps_net_base }}.91"
+# dc_grafana_net_testing_ip: "{{ core_apps_net_base }}.92"
+
+# # ? ######################################################################################## #
+# # !                                   Standalone containers                                  #
+# # ? ######################################################################################## #
+# # ? for external apps or for testing as a single container
+# # ? 10.140.x.0/29 => 0,8,16,24,32,40,48,56,64,72,80,88,96,104,112,120,128,136,144,152,160,168,176,184,192,200,208,216,224,232,240,248
+# # 10.140.x.0 - 10.140.x.7 # usable => 10.140.x.2 - 10.140.x.6
+# # 10.140.x.8 - 10.140.x.15 # usable => 10.140.x.10 - 10.140.x.14
+# # 10.140.x.16 - 10.140.x.23 # usable => 10.140.x.18 - 10.140.x.22
+# # ...
+# # 10.140.x.232 - 10.140.x.239 # usable => 10.140.x.234 - 10.140.x.238
+# # 10.140.x.240 - 10.140.x.247 # usable => 10.140.x.242 - 10.140.x.246
+# # 10.140.x.248 - 10.140.x.255 # usable => 10.140.x.250 - 10.140.x.254
+# core_standalone_net_base: 10.140.{{ host_identifier }}
+# core_standalone_net_prefix_length: 29
+
+# # ? -----------------------------------------------------------------------------
+# # *                     Socket Proxy - standalone container                     *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.140.x.0 - 10.140.x.7 # usable => 10.140.x.2 - 10.140.x.6
+# dc_socketproxy_net_address: "{{ core_standalone_net_base }}.0"
+# dc_socketproxy_net_cidr: "{{ dc_socketproxy_net_address }}/{{ core_standalone_net_prefix_length }}"
+# dc_socketproxy_net_ip: "{{ core_standalone_net_base }}.2"
+
+# # ? -----------------------------------------------------------------------------
+# # *                  PostgreSQL Bitnami - standalone container                  *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.140.x.8 - 10.140.x.15 # usable => 10.140.x.10 - 10.140.x.14
+# dc_postgresql_bitnami_net_address: "{{ core_standalone_net_base }}.8"
+# dc_postgresql_bitnami_net_cidr: "{{ dc_postgresql_bitnami_net_address }}/{{ core_standalone_net_prefix_length }}"
+# dc_postgresql_bitnami_net_ip: "{{ core_standalone_net_base }}.10"
+
+# # ? -----------------------------------------------------------------------------
+# # *                     Redis Bitnami - standalone container                    *
+# # ? -----------------------------------------------------------------------------
+# # ? 10.140.x.16 - 10.140.x.23 # usable => 10.140.x.18 - 10.140.x.22
+# dc_redis_bitnami_net_address: "{{ core_standalone_net_base }}.16"
+# dc_redis_bitnami_net_cidr: "{{ dc_redis_bitnami_net_address }}/{{ core_standalone_net_prefix_length }}"
+# dc_redis_bitnami_net_ip: "{{ core_standalone_net_base }}.18"
+
+
+# ! --------------------------- Notes --------------------------- ! #
+# Docker uses the first ip for the gateway. Therefore first ip is not usable.
+# Eg. usable ips starts at 10.140.x.2 instead of 10.140.x.1
+
+
+# Maybe to test later on:
+# foo_postgresql_grafana_password_encoded: |-
+#   {%- if '!' in foo_postgresql_grafana_password or '#' in foo_postgresql_grafana_password -%}
+#   {{- ('\"\"\"' + foo_postgresql_grafana_password + '\"\"\"') | b64encode -}}
+#   {%- else -%}
+#   {{- foo_postgresql_grafana_password | b64encode -}}
+#   {%- endif -%}
+
+
+# # Predefine /24 subnets => first IP is network address, second is gateway, last is broadcast address, therefore 254 usable IPs per subnet
+# # Total /24 subnets per environment: 16 (50% of all subnets)
+# env_24_docker_subnets_address: # Eg: demo: 10.142.0.0/24 => 10.142.0.1 - 10.142.0.254 ; prod 10.142.192.0/24 => 10.142.192.1 - 10.142.192.254
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 0 }}.0" # ? default bridge docker0
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 1 }}.0" # ? docker address pool 1
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 2 }}.0" # ? docker address pool 2
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 3 }}.0" # ? docker address pool 3
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 4 }}.0" # ? traefik_net
+#   # ...
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 14 }}.0"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 15 }}.0" # End of /24 subnets for this environment
+
+
+# # Predefine /26 subnets => first IP is network address, last is broadcast address, therefore 62 usable IPs per subnet
+# # Total /26 subnets per environment: 32 (50% of the remaining subnets after the first 50% of /24 subnets)
+# env_26_docker_subnets_address: # Eg: demo:
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 16 }}.0"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 16 }}.64"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 16 }}.128"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 16 }}.192"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 17 }}.0"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 17 }}.64"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 17 }}.128"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 17 }}.192"
+#   # ...
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 23 }}.192/26"   # End of /26 subnets for this environment
+
+# # Predefine /28 subnets => first IP is network address, last is broadcast address, therefore 14 usable IPs per subnet
+# # Total /28 subnets per environment: 64 (50% of the remaining subnets after the 50% of /26 subnets)
+# env_28_docker_subnets_address:
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 24 }}.0"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 24 }}.16"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 24 }}.32"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 24 }}.48"
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 24 }}.64"
+#   # ...
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 27 }}.240"   # End of /28 subnets for this environment
+
+# # Predefine /29 subnets => first IP is network address, last is broadcast address, therefore 6 usable IPs per subnet
+# # Total /29 subnets per environment: 128 /(last 50% of subnets remaining after the 50% of /28 subnets)
+# env_29_docker_subnets_address: # Eg: demo: 10.142.224.0/29 => 10.142.224.1 - 10.142.224.6
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 28 }}.0/29" # .0 # traefik socketproxy
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 28 }}.8/29" # .8
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 28 }}" # .16
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 28 }}" # .24
+#   # ...
+#   - "10.{{ vm_number | int }}.{{ env_docker_base_octet | int + 31 }}" # .248  # End of /29 subnets for this environment

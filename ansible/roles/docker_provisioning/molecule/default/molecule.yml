@@ -1,0 +1,102 @@
+---
+# ansible/roles/docker_provisioning/molecule/default/molecule.yml
+# Molecule testing configuration for Docker provisioning role
+
+dependency:
+  name: galaxy
+  options:
+    requirements-file: ../../requirements.yml
+    force: false
+
+driver:
+  name: docker
+
+platforms:
+  - name: ubuntu-2204
+    image: ubuntu:22.04
+    pre_build_image: false
+    privileged: true
+    command: /sbin/init
+    capabilities:
+      - SYS_ADMIN
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    cgroupns_mode: host
+    groups:
+      - docker_hosts
+      - test
+
+  - name: debian-12
+    image: debian:12
+    pre_build_image: false
+    privileged: true
+    command: /sbin/init
+    capabilities:
+      - SYS_ADMIN
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    cgroupns_mode: host
+    groups:
+      - docker_hosts
+      - test
+
+provisioner:
+  name: ansible
+  config_options:
+    defaults:
+      interpreter_python: auto_silent
+      callbacks_enabled: profile_tasks, timer, yaml
+      stdout_callback: yaml
+      verbosity: 1
+    ssh_connection:
+      pipelining: true
+  inventory:
+    group_vars:
+      all:
+        # Docker provisioning variables for testing
+        docker_provisioning_version: "latest"
+        docker_provisioning_compose_version: "2.23.0"
+        docker_provisioning_storage_driver: "overlay2"
+        docker_provisioning_data_root: "/opt/docker"
+        docker_provisioning_log_driver: "json-file"
+        docker_provisioning_log_opts:
+          max-size: "10m"
+          max-file: "3"
+        docker_provisioning_enable_userns_remap: true
+        docker_provisioning_userns_remap: "dockremap:dockremap"
+        docker_provisioning_default_address_pools:
+          - base: "172.17.0.0/12"
+            size: 24
+        docker_provisioning_enable_metrics: false
+        docker_provisioning_enable_experimental: false
+        docker_provisioning_enable_debug: true
+        docker_provisioning_container_default_user: "app"
+        docker_provisioning_container_default_uid: 1337
+        docker_provisioning_container_default_gid: 1337
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+  lint: |
+    set -e
+    yamllint .
+    ansible-lint
+
+verifier:
+  name: ansible
+  enabled: true
+
+scenario:
+  name: default
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - cleanup
+    - destroy

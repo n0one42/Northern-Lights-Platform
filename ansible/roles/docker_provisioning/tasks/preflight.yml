@@ -1,0 +1,246 @@
+# ansible/roles/docker_provisioning/tasks/preflight.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                           Docker Provisioning Role - Preflight Checks                     * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file performs all pre-installation checks and assertions to ensure
+# the system is ready for Docker installation with our security model.
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Ansible Version Check                                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify minimum Ansible version
+  ansible.builtin.assert:
+    that:
+      - ansible_version.full is version(docker_provisioning_min_ansible_version, '>=')
+    fail_msg: |
+      This role requires Ansible {{ docker_provisioning_min_ansible_version }} or higher.
+      Current version: {{ ansible_version.full }}
+    success_msg: "Ansible version {{ ansible_version.full }} meets requirements"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Operating System Checks                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify supported operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family in docker_provisioning_supported_os_families
+      - ansible_distribution in docker_provisioning_supported_distributions
+    fail_msg: |
+      Unsupported operating system detected.
+      OS Family: {{ ansible_os_family }} (supported: {{ docker_provisioning_supported_os_families | join(', ') }})
+      Distribution: {{ ansible_distribution }} (supported: {{ docker_provisioning_supported_distributions | join(', ') }})
+    success_msg: "Operating system {{ ansible_distribution }} {{ ansible_distribution_version }} is supported"
+
+- name: Verify system architecture
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture in ['x86_64', 'amd64', 'aarch64', 'arm64']
+    fail_msg: "Unsupported architecture: {{ ansible_architecture }}"
+    success_msg: "Architecture {{ ansible_architecture }} is supported"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    System Requirements Check                              * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if running with sufficient privileges
+  ansible.builtin.command:
+    cmd: id -u
+  register: docker_provisioning_user_id
+  changed_when: false
+  failed_when: false
+
+- name: Verify running as root or with sudo
+  ansible.builtin.assert:
+    that:
+      - docker_provisioning_user_id.stdout == "0"
+    fail_msg: "This role must be run as root or with sudo privileges"
+    success_msg: "Running with sufficient privileges"
+
+- name: Check available disk space in /opt
+  ansible.builtin.shell: |
+    set -o pipefail
+    df -BG /opt | tail -1 | awk '{print $4}' | sed 's/G//'
+  args:
+    executable: /bin/bash
+  register: docker_provisioning_opt_space
+  changed_when: false
+  failed_when: false
+
+- name: Verify sufficient disk space for Docker
+  ansible.builtin.assert:
+    that:
+      - docker_provisioning_opt_space.stdout | int >= 10
+    fail_msg: "Insufficient disk space in /opt. At least 10GB required, found {{ docker_provisioning_opt_space.stdout }}GB"
+    success_msg: "Sufficient disk space available: {{ docker_provisioning_opt_space.stdout }}GB"
+  when: docker_provisioning_opt_space.stdout | length > 0
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Required Variables Check                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify required variables are defined
+  ansible.builtin.assert:
+    that:
+      - docker_provisioning_dockremap_user is defined
+      - docker_provisioning_dockremap_user | length > 0
+      - docker_provisioning_subordinate_uid_start is defined
+      - docker_provisioning_subordinate_uid_start | int >= 100000
+      - docker_provisioning_subordinate_range_size is defined
+      - docker_provisioning_subordinate_range_size | int >= 65536
+      - docker_provisioning_container_internal_uid is defined
+      - docker_provisioning_container_internal_uid | int > 0
+    fail_msg: |
+      Required variables are not properly defined.
+      Please ensure all security-related variables are set in group_vars.
+    success_msg: "All required variables are properly defined"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Network Configuration Check                            * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify network configuration variables
+  ansible.builtin.assert:
+    that:
+      - docker_net is defined
+      - docker_net.bip is defined
+    fail_msg: |
+      Docker network configuration is missing.
+      Please ensure docker_net variables are defined in group_vars/all/docker-network.yml
+    success_msg: "Docker network configuration is properly defined"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Check for Conflicting Software                         * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if Docker is already installed
+  ansible.builtin.command:
+    cmd: which docker
+  register: docker_provisioning_docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Check if Podman is installed (conflicts with Docker)
+  ansible.builtin.command:
+    cmd: which podman
+  register: docker_provisioning_podman_check
+  changed_when: false
+  failed_when: false
+
+- name: Warn if Podman is installed
+  ansible.builtin.fail:
+    msg: |
+      Podman is currently installed on this system.
+      Podman and Docker can conflict with each other.
+      Please uninstall Podman before proceeding with Docker installation.
+  when: docker_provisioning_podman_check.rc == 0
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Security Checks                                        * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if AppArmor is available
+  ansible.builtin.command:
+    cmd: which aa-status
+  register: docker_provisioning_apparmor_check
+  changed_when: false
+  failed_when: false
+
+- name: Set AppArmor availability fact
+  ansible.builtin.set_fact:
+    docker_provisioning_apparmor_available: "{{ docker_provisioning_apparmor_check.rc == 0 }}"
+
+- name: Check if SELinux is available
+  ansible.builtin.command:
+    cmd: which getenforce
+  register: docker_provisioning_selinux_check
+  changed_when: false
+  failed_when: false
+
+- name: Set SELinux availability fact
+  ansible.builtin.set_fact:
+    docker_provisioning_selinux_available: "{{ docker_provisioning_selinux_check.rc == 0 }}"
+
+- name: Display security features status
+  ansible.builtin.debug:
+    msg:
+      - "AppArmor available: {{ docker_provisioning_apparmor_available }}"
+      - "SELinux available: {{ docker_provisioning_selinux_available }}"
+      - "User namespace remapping will be configured for enhanced security"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Kernel Requirements Check                              * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Get kernel version
+  ansible.builtin.command:
+    cmd: uname -r
+  register: docker_provisioning_kernel_version
+  changed_when: false
+
+- name: Check for required kernel modules
+  ansible.builtin.shell: |
+    set -o pipefail
+    for module in overlay br_netfilter; do
+      if ! lsmod | grep -q "^$module"; then
+        modprobe $module 2>/dev/null || echo "missing:$module"
+      fi
+    done
+  args:
+    executable: /bin/bash
+  register: docker_provisioning_kernel_modules
+  changed_when: false
+  failed_when: false
+
+- name: Verify kernel compatibility
+  ansible.builtin.debug:
+    msg: "Kernel version: {{ docker_provisioning_kernel_version.stdout }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    System State Recording                                 * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Record pre-installation system state
+  ansible.builtin.set_fact:
+    docker_provisioning_preflight_complete: true
+    docker_provisioning_fresh_install: "{{ docker_provisioning_docker_check.rc != 0 }}"
+    docker_provisioning_system_info:
+      os_family: "{{ ansible_os_family }}"
+      distribution: "{{ ansible_distribution }}"
+      version: "{{ ansible_distribution_version }}"
+      architecture: "{{ ansible_architecture }}"
+      kernel: "{{ docker_provisioning_kernel_version.stdout }}"
+      apparmor: "{{ docker_provisioning_apparmor_available }}"
+      selinux: "{{ docker_provisioning_selinux_available }}"
+
+- name: Display installation type
+  ansible.builtin.debug:
+    msg: >-
+      {% if docker_provisioning_fresh_install %}
+      Performing fresh Docker installation with security hardening
+      {% else %}
+      Docker is already installed - will reconfigure with security hardening
+      {% endif %}
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Create Ansible Facts Directory                         * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure Ansible facts directory exists
+  ansible.builtin.file:
+    path: /etc/ansible/facts.d
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Save Docker provisioning facts
+  ansible.builtin.copy:
+    content: "{{ docker_provisioning_system_info | to_nice_json }}"
+    dest: /etc/ansible/facts.d/docker_provisioning.fact
+    mode: "0644"
+    owner: root
+    group: root

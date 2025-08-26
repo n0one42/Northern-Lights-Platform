@@ -1,2 +1,160 @@
+# ansible/roles/docker_provisioning/vars/main.yml
 ---
-# vars file for roles/docker_provisioning
+# * ---------------------------------------------------------------------------------------- * #
+# ?                           Docker Provisioning Role - Role Variables                       * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file contains role-specific variables that should not be overridden by users.
+# These are internal constants used by the role.
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Security Constants                              * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Security model implementation markers
+docker_provisioning_security_pillars:
+  host_container_isolation: true
+  container_container_isolation: true
+  intra_container_security: true
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    System Requirements                                    * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Minimum required Ansible version
+docker_provisioning_min_ansible_version: "2.12"
+
+# Supported operating systems
+docker_provisioning_supported_os_families:
+  - Debian
+  - RedHat
+
+# Supported distributions
+docker_provisioning_supported_distributions:
+  - Ubuntu
+  - Debian
+  - CentOS
+  - RHEL
+  - AlmaLinux
+  - Rocky
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Repository Keys                                 * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Docker GPG key fingerprint for verification
+docker_provisioning_gpg_fingerprint: "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+
+# Docker repository keyrings path
+docker_provisioning_keyrings_dir: "/etc/apt/keyrings"
+docker_provisioning_gpg_key_path: "/etc/apt/keyrings/docker.gpg"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Role Internal Variables                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Role metadata
+docker_provisioning_role_version: "2.0.0"
+docker_provisioning_role_name: "docker_provisioning"
+
+# Internal flags for role operation
+docker_provisioning_internal_force_restart: false
+docker_provisioning_internal_config_changed: false
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Directory Permission Modes                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Directory permissions following the security blueprint
+docker_provisioning_dir_permissions:
+  docker_root: "0755" # /opt/docker - accessible but not writable
+  data_root: "0701" # /opt/docker/data - Docker's private directory
+  services: "0750" # /opt/docker/services - Ansible role data
+  secrets: "0700" # /opt/docker/secrets - Host-side secrets
+  logs: "0755" # /opt/docker/logs - Log directory for bind mounts
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Default Values for Core Variables                      * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# These provide defaults for variables that should be set in group_vars
+# They ensure the role can function even if group_vars are incomplete
+
+# Core security user - MUST match documentation
+docker_provisioning_dockremap_user: "{{ dockremap_user | default('dockremap') }}"
+
+# Subordinate UID/GID configuration
+docker_provisioning_subordinate_uid_start: "{{ subordinate_uid_start | default(100000) }}"
+docker_provisioning_subordinate_range_size: "{{ subordinate_range_size | default(65536) }}"
+
+# Container internal UID/GID - standard across all containers
+docker_provisioning_container_internal_uid: "{{ container_internal_uid | default(1337) }}"
+docker_provisioning_container_internal_gid: "{{ container_internal_uid | default(1337) }}"
+
+# Docker directory structure
+docker_provisioning_docker_root: "{{ docker.home | default('/opt/docker') }}"
+docker_provisioning_data_root: "{{ docker_provisioning_docker_root }}/data"
+docker_provisioning_services_dir: "{{ docker_provisioning_docker_root }}/services"
+docker_provisioning_secrets_dir: "{{ docker.container_secrets | default(docker_provisioning_docker_root + '/secrets') }}"
+docker_provisioning_logs_dir: "{{ docker.container_logs | default(docker_provisioning_docker_root + '/logs') }}"
+
+# Network configuration from group_vars
+docker_provisioning_docker_bip: "{{ docker_net.bip | default('172.17.0.1/16') }}"
+docker_provisioning_default_address_pools: "{{ docker_net.default_address_pools | default([]) }}"
+docker_provisioning_mtu: "{{ docker_net.mtu | default(1500) }}"
+
+# Primary user configuration
+docker_provisioning_primary_user_name: "{{ primary_user_name | default('') }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Package Lists                                          * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# System packages required for Docker installation
+docker_provisioning_system_packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - apt-transport-https
+  - software-properties-common
+
+# Docker CE packages to install
+docker_provisioning_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Daemon Defaults                                 * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Logging configuration
+docker_provisioning_log_driver: "json-file"
+docker_provisioning_log_max_size: "10m"
+docker_provisioning_log_max_file: "3"
+
+# Storage driver
+docker_provisioning_storage_driver: "overlay2"
+
+# Live restore feature
+docker_provisioning_live_restore: true
+
+# IPv6 support (disabled for security)
+docker_provisioning_ipv6_enabled: false
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Validation Settings                                    * #
+# * ---------------------------------------------------------------------------------------- * #
+
+docker_provisioning_run_validation: true
+docker_provisioning_validation_timeout: 30
+docker_provisioning_validation_checks:
+  - docker_installed
+  - docker_running
+  - userns_configured
+  - directories_created
+  - permissions_correct
+  - compose_available

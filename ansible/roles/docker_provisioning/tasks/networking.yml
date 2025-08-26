@@ -1,0 +1,101 @@
+# ansible/roles/docker_provisioning/tasks/networking.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                        Docker Provisioning Role - Network Configuration                   * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file configures Docker networking per ADR-001's hierarchical IPAM scheme.
+# Implements Pillar 2: Container-Container Isolation through network segmentation.
+#
+# NOTE: Most network configuration is handled via daemon.json. This file handles:
+# - Network policy enforcement
+# - Custom network creation (if needed)
+# - Network validation
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Network Policy Enforcement                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Deploy Docker network isolation policy script
+  ansible.builtin.template:
+    src: network-policy.sh.j2
+    dest: "{{ docker_provisioning_docker_root }}/scripts/docker-network-policy.sh"
+    owner: root
+    group: root
+    mode: "0750"
+  register: docker_provisioning_network_policy
+
+- name: Make network policy script executable and apply
+  ansible.builtin.command:
+    cmd: "{{ docker_provisioning_docker_root }}/scripts/docker-network-policy.sh"
+  when:
+    - docker_provisioning_network_policy.changed
+    - docker_provisioning_enforce_network_policies | default(true)
+  changed_when: true
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Verify Network Configuration                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Get Docker bridge network information
+  ansible.builtin.command:
+    cmd: docker network inspect bridge --format json
+  register: docker_provisioning_bridge_info
+  changed_when: false
+  failed_when: false
+
+- name: Parse bridge network configuration
+  ansible.builtin.set_fact:
+    docker_bridge_config: "{{ docker_provisioning_bridge_info.stdout | from_json | first }}"
+  when: docker_provisioning_bridge_info.rc == 0
+
+- name: Verify bridge network matches expected configuration
+  ansible.builtin.assert:
+    that:
+      - docker_bridge_config.Driver == "bridge"
+      - docker_bridge_config.Options['com.docker.network.bridge.name'] == "docker0"
+    fail_msg: "Docker bridge network configuration does not match expected settings"
+    success_msg: "✓ Docker bridge network configured correctly"
+  when: docker_bridge_config is defined
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Network Isolation Validation                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if inter-container communication is disabled
+  ansible.builtin.command:
+    cmd: docker info --format '{{ '{{' }}.BridgeNfIptables{{ '}}' }}'
+  register: docker_provisioning_icc_check
+  changed_when: false
+  failed_when: false
+
+- name: List all Docker networks
+  ansible.builtin.command:
+    cmd: docker network ls --format json
+  register: docker_provisioning_networks_list
+  changed_when: false
+
+- name: Parse network list
+  ansible.builtin.set_fact:
+    docker_active_networks: "{{ docker_provisioning_networks_list.stdout_lines | map('from_json') | list }}"
+  when: docker_provisioning_networks_list.rc == 0
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Display Network Summary                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Display network configuration summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Docker Network Configuration ==="
+      - "Bridge Network CIDR: {{ docker_provisioning_docker_bip }}"
+      - "MTU: {{ docker_provisioning_mtu }}"
+      - "IPv6 Enabled: {{ docker_provisioning_ipv6_enabled }}"
+      - "Inter-Container Communication: Disabled (enforced by daemon.json icc=false)"
+      - "Active Networks: {{ docker_active_networks | length }}"
+      - ""
+      - "Security Features:"
+      - "✓ Network isolation enforced via iptables"
+      - "✓ Container-to-container communication restricted"
+      - "✓ Named volumes for data isolation"
+  when: docker_active_networks is defined

@@ -42,7 +42,8 @@ exclude_paths:
   - "**/.DS_Store" # macOS system files
   - "**/*.retry" # Ansible retry files
   - ".ansible_facts_cache/" # Facts cache directory
-  - molecule/ # Molecule test scenarios
+  - "**/molecule/**" # Molecule test scenarios
+  - "molecule/**" # Molecule test scenarios
   - tests/ # Test directories
 
 # Enhanced file type detection for better linting
@@ -68,13 +69,15 @@ kinds:
 
 # Mock modules for collections that might not be installed locally
 mock_modules:
+  - community.general.modprobe
   - community.general.proxmox_vm
   - community.general.proxmox_kvm
   - community.docker.docker_compose_v2
   - community.docker.docker_compose
-  - community.general.docker_container
+  - community.docker.docker_container
   - community.general.docker_network
   - community.general.docker_volume
+  - ansible.posix.sysctl
 
 # Mock roles for testing
 mock_roles:

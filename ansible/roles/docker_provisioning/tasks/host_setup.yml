@@ -1,0 +1,232 @@
+# ansible/roles/docker_provisioning/tasks/host_setup.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                           Docker Provisioning Role - Host Setup                           * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file implements Pillar 1 of the security model: Host-Container Isolation
+# It creates and configures the dockremap user with subordinate UID/GID ranges
+# for Docker's user namespace remapping feature.
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Create dockremap User                                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if dockremap user exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ docker_provisioning_dockremap_user }}"
+  register: docker_provisioning_dockremap_user_check
+  failed_when: false
+
+- name: Create the dockremap system user
+  ansible.builtin.user:
+    name: "{{ docker_provisioning_dockremap_user }}"
+    system: true
+    shell: /bin/false
+    home: /nonexistent
+    create_home: false
+    password: "!" # Disabled password
+    password_lock: true
+    comment: "Docker User Namespace Remap"
+    state: present
+  when: docker_provisioning_dockremap_user_check.failed | default(false)
+
+- name: Ensure dockremap user is locked
+  ansible.builtin.user:
+    name: "{{ docker_provisioning_dockremap_user }}"
+    password_lock: true
+  when: not docker_provisioning_dockremap_user_check.failed | default(false)
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Configure Subordinate UID Ranges                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check current /etc/subuid configuration
+  ansible.builtin.slurp:
+    src: /etc/subuid
+  register: docker_provisioning_subuid_current
+  failed_when: false
+
+- name: Check current /etc/subgid configuration
+  ansible.builtin.slurp:
+    src: /etc/subgid
+  register: docker_provisioning_subgid_current
+  failed_when: false
+
+- name: Configure subordinate UID range for dockremap user
+  ansible.builtin.lineinfile:
+    path: /etc/subuid
+    line: "{{ docker_provisioning_dockremap_user }}:{{ docker_provisioning_subordinate_uid_start }}:{{ docker_provisioning_subordinate_range_size }}"
+    regexp: "^{{ docker_provisioning_dockremap_user }}:"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Restart docker
+
+- name: Configure subordinate GID range for dockremap user
+  ansible.builtin.lineinfile:
+    path: /etc/subgid
+    line: "{{ docker_provisioning_dockremap_user }}:{{ docker_provisioning_subordinate_uid_start }}:{{ docker_provisioning_subordinate_range_size }}"
+    regexp: "^{{ docker_provisioning_dockremap_user }}:"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  notify: Restart docker
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Verify UID/GID Ranges                                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify subordinate UID range is configured correctly
+  ansible.builtin.command:
+    cmd: "grep '^{{ docker_provisioning_dockremap_user }}:' /etc/subuid"
+  register: docker_provisioning_verify_subuid
+  changed_when: false
+  failed_when: docker_provisioning_verify_subuid.rc != 0
+
+- name: Verify subordinate GID range is configured correctly
+  ansible.builtin.command:
+    cmd: "grep '^{{ docker_provisioning_dockremap_user }}:' /etc/subgid"
+  register: docker_provisioning_verify_subgid
+  changed_when: false
+  failed_when: docker_provisioning_verify_subgid.rc != 0
+
+- name: Parse and validate subordinate ranges
+  ansible.builtin.set_fact:
+    docker_provisioning_subuid_values: "{{ docker_provisioning_verify_subuid.stdout.split(':') }}"
+    docker_provisioning_subgid_values: "{{ docker_provisioning_verify_subgid.stdout.split(':') }}"
+
+- name: Assert subordinate ranges are correctly configured
+  ansible.builtin.assert:
+    that:
+      - docker_provisioning_subuid_values[0] == docker_provisioning_dockremap_user
+      - docker_provisioning_subuid_values[1] | int == docker_provisioning_subordinate_uid_start | int
+      - docker_provisioning_subuid_values[2] | int == docker_provisioning_subordinate_range_size | int
+      - docker_provisioning_subgid_values[0] == docker_provisioning_dockremap_user
+      - docker_provisioning_subgid_values[1] | int == docker_provisioning_subordinate_uid_start | int
+      - docker_provisioning_subgid_values[2] | int == docker_provisioning_subordinate_range_size | int
+    fail_msg: "Subordinate UID/GID ranges are not properly configured"
+    success_msg: "Subordinate UID/GID ranges verified: {{ docker_provisioning_subordinate_uid_start }}:{{ docker_provisioning_subordinate_range_size }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Create Docker Group                                    * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+    system: true
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Add Primary User to Docker Group                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Add primary user to docker group (if defined)
+  ansible.builtin.user:
+    name: "{{ docker_provisioning_primary_user_name }}"
+    groups: docker
+    append: true
+  when:
+    - docker_provisioning_primary_user_name is defined
+    - docker_provisioning_primary_user_name | length > 0
+  register: docker_provisioning_user_group_added
+
+- name: Inform about docker group membership
+  ansible.builtin.debug:
+    msg: >-
+      User '{{ docker_provisioning_primary_user_name }}' has been added to the docker group.
+      The user may need to log out and back in for the group membership to take effect.
+  when:
+    - docker_provisioning_user_group_added is defined
+    - docker_provisioning_user_group_added.changed | default(false)
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Configure System Parameters                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Configure kernel parameters for Docker
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-docker.conf
+    reload: true
+  loop:
+    - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+    - { name: "net.ipv4.ip_forward", value: "1" }
+    - { name: "net.ipv6.conf.all.forwarding", value: "0" } # IPv6 disabled per security model
+  notify: Restart docker
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Load Required Kernel Modules                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Load required kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop:
+    - overlay
+    - br_netfilter
+  notify: Restart docker
+
+- name: Ensure kernel modules load on boot
+  ansible.builtin.copy:
+    content: |
+      # Docker required kernel modules
+      overlay
+      br_netfilter
+    dest: /etc/modules-load.d/docker.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Security Hardening for userns-remap                        * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Set security limits for dockremap user
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    line: "{{ item }}"
+    state: present
+    backup: true
+  loop:
+    - "{{ docker_provisioning_dockremap_user }} soft nofile 1048576"
+    - "{{ docker_provisioning_dockremap_user }} hard nofile 1048576"
+    - "{{ docker_provisioning_dockremap_user }} soft nproc 1048576"
+    - "{{ docker_provisioning_dockremap_user }} hard nproc 1048576"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Log Configuration Summary                              * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Display host setup summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Docker Host Setup Complete ==="
+      - "Security Pillar 1 (Host-Container Isolation) configured:"
+      - "  - User: {{ docker_provisioning_dockremap_user }}"
+      - "  - UID Range Start: {{ docker_provisioning_subordinate_uid_start }}"
+      - "  - Range Size: {{ docker_provisioning_subordinate_range_size }}"
+      - "  - Container UID {{ docker_provisioning_container_internal_uid }} maps to host UID {{ docker_provisioning_subordinate_uid_start | int + docker_provisioning_container_internal_uid | int }}"
+      - "  - Kernel modules loaded: overlay, br_netfilter"
+      - "  - System parameters configured for Docker networking"
+
+- name: Save host setup configuration facts
+  ansible.builtin.set_fact:
+    docker_provisioning_host_setup_complete: true
+    docker_provisioning_userns_config:
+      user: "{{ docker_provisioning_dockremap_user }}"
+      uid_start: "{{ docker_provisioning_subordinate_uid_start }}"
+      range_size: "{{ docker_provisioning_subordinate_range_size }}"
+      container_uid: "{{ docker_provisioning_container_internal_uid }}"
+      host_mapped_uid: "{{ docker_provisioning_subordinate_uid_start | int + docker_provisioning_container_internal_uid | int }}"

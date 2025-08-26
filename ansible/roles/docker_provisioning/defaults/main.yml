@@ -1,10 +1,161 @@
+# ansible/roles/docker_provisioning/defaults/main.yml
 ---
-# defaults file for roles/docker_provisioning
+# * ---------------------------------------------------------------------------------------- * #
+# ?                           Docker Provisioning Role - Default Variables                    * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file documents all available variables for the docker_provisioning role.
+# According to the Northern-Lights-Platform convention, all variables are commented out here
+# and must be defined in group_vars/all/*.yml files.
+#
+# The role implements the three-pillar security model:
+# 1. Host-Container Isolation (userns-remap)
+# 2. Container-Container Isolation (Named Volumes)
+# 3. Intra-Container Security (Non-root user)
 
-docker_provisioning_timezone: "{{ timezone }}"
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Core Docker Configuration                              * #
+# * ---------------------------------------------------------------------------------------- * #
 
-docker_provisioning_primary_user_name: "{{ primary_user_name }}"
+# User for Docker's user namespace remapping (Pillar 1: Host-Container Isolation)
+# This user will be created as a system user with no login shell
+# docker_provisioning_dockremap_user: "dockremap"
 
-docker_provisioning_docker_user_name: "{{ docker.user_name }}"
-docker_provisioning_docker_user_uid: "{{ docker.user_ugid }}"
-docker_provisioning_docker_user_gid: "{{ docker.user_ugid }}"
+# Subordinate UID/GID range for user namespace remapping
+# These values define the range of UIDs/GIDs available for remapping
+# docker_provisioning_subordinate_uid_start: 100000
+# docker_provisioning_subordinate_range_size: 65536
+
+# Standard UID/GID for container processes (Pillar 3: Intra-Container Security)
+# All containers should run with this UID unless explicitly required otherwise
+# docker_provisioning_container_internal_uid: 1337
+# docker_provisioning_container_internal_gid: 1337
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Directory Structure                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Root directory for all Docker-related files
+# docker_provisioning_docker_root: "/opt/docker"
+
+# Docker data root - where Docker stores its internal data
+# This directory is managed entirely by Docker and should not be modified directly
+# docker_provisioning_data_root: "/opt/docker/data"
+
+# Services directory - stores Ansible role data and compose files
+# docker_provisioning_services_dir: "/opt/docker/services"
+
+# Secrets directory - stores host-side secret files
+# docker_provisioning_secrets_dir: "/opt/docker/secrets"
+
+# Logs directory - parent for log file bind-mounts (managed exception)
+# docker_provisioning_logs_dir: "/opt/docker/logs"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Network Configuration                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Docker bridge network configuration (bip = bridge IP)
+# This is derived from the hierarchical networking scheme
+# docker_provisioning_docker_bip: "{{ docker_net.bip }}"
+
+# Default address pools for automatic network creation
+# docker_provisioning_default_address_pools: "{{ docker_net.default_address_pools }}"
+
+# MTU (Maximum Transmission Unit) for Docker networks
+# docker_provisioning_mtu: 1500
+
+# IPv6 support (disabled by default for security)
+# docker_provisioning_ipv6_enabled: false
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Daemon Configuration                            * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Storage driver (overlay2 is the recommended driver for modern systems)
+# docker_provisioning_storage_driver: "overlay2"
+
+# Logging configuration
+# docker_provisioning_log_driver: "json-file"
+# docker_provisioning_log_max_size: "10m"
+# docker_provisioning_log_max_file: "3"
+
+# Live restore - keeps containers running when the Docker daemon is down
+# docker_provisioning_live_restore: true
+
+# Default runtime (runc is the default)
+# docker_provisioning_default_runtime: "runc"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    System User Configuration                              * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Primary administrative user that will be added to the docker group
+# This should match your primary_user_name from group_vars
+# docker_provisioning_primary_user_name: "{{ primary_user_name | default('') }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Security Configuration                                 * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Enable user namespace remapping (Critical for security - should always be true)
+# docker_provisioning_userns_remap_enabled: true
+
+# Seccomp profile (default profile provides good security)
+# docker_provisioning_seccomp_profile: "default"
+
+# AppArmor profile (if AppArmor is available on the system)
+# docker_provisioning_apparmor_profile: "docker-default"
+
+# Disable legacy bridge (docker0) - recommended for production
+# docker_provisioning_bridge_none: false
+
+# Enable content trust for image verification
+# docker_provisioning_content_trust: false
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Installation Configuration                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Docker CE packages to install
+# docker_provisioning_packages:
+#   - docker-ce
+#   - docker-ce-cli
+#   - containerd.io
+#   - docker-buildx-plugin
+#   - docker-compose-plugin
+
+# Docker repository configuration
+# docker_provisioning_apt_repository_url: "https://download.docker.com/linux/ubuntu"
+# docker_provisioning_apt_gpg_url: "https://download.docker.com/linux/ubuntu/gpg"
+
+# System packages required for Docker installation
+# docker_provisioning_system_packages:
+#   - ca-certificates
+#   - curl
+#   - gnupg
+#   - lsb-release
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Feature Flags                                          * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Install Docker Compose plugin (modern approach)
+# docker_provisioning_install_compose_plugin: true
+
+# Enable experimental features
+# docker_provisioning_experimental: false
+
+# Enable Docker metrics for Prometheus
+# docker_provisioning_metrics_enabled: false
+# docker_provisioning_metrics_addr: "127.0.0.1:9323"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Validation Configuration                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+# Run post-installation validation checks
+# docker_provisioning_run_validation: true
+
+# Validation timeout in seconds
+# docker_provisioning_validation_timeout: 30

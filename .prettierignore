@@ -9,7 +9,7 @@
 
 # Configurations with aligned values
 ansible/inventories/group_vars/all/network.yml
-
+ansible/inventories/group_vars/all/docker-network.yml
 
 # =================================================================================
 # Generated and External Files

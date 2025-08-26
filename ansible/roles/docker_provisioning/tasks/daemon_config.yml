@@ -1,0 +1,150 @@
+# ansible/roles/docker_provisioning/tasks/daemon_config.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                        Docker Provisioning Role - Daemon Configuration                    * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file configures the Docker daemon with security-first settings per ADR-001.
+# Implements all three security pillars through daemon.json configuration.
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Pre-Configuration Setup                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure Docker configuration directory exists
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Check if daemon.json already exists
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: docker_provisioning_daemon_existing
+
+- name: Backup existing daemon configuration if present
+  ansible.builtin.copy:
+    src: /etc/docker/daemon.json
+    dest: "{{ docker_provisioning_docker_root }}/backups/daemon.json.{{ ansible_date_time.epoch }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when: docker_provisioning_daemon_existing.stat.exists | default(false)
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Deploy Daemon Configuration                            * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Deploy Docker daemon.json configuration
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+    validate: python3 -m json.tool %s
+  notify:
+    - Restart docker
+    - Wait for Docker daemon
+  register: docker_provisioning_daemon_deployed
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Systemd Service Configuration                          * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create systemd drop-in directory for Docker
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure Docker systemd service overrides
+  ansible.builtin.copy:
+    content: |
+      # Docker service configuration drop-in
+      # Managed by Ansible - docker_provisioning role
+      [Service]
+      # Security hardening
+      NoNewPrivileges=true
+      ReadWritePaths={{ docker_provisioning_data_root }} /var/run/docker.sock
+
+      # Resource limits
+      LimitNOFILE=1048576
+      LimitNPROC=infinity
+      LimitCORE=infinity
+
+      # Restart policy
+      Restart=always
+      RestartSec=10s
+
+      # Startup configuration
+      TimeoutStartSec=0
+      TimeoutStopSec=30s
+
+      # OOM score adjustment (less likely to be killed)
+      OOMScoreAdjust=-500
+    dest: /etc/systemd/system/docker.service.d/override.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart docker
+    - Wait for Docker daemon
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Start and Enable Docker                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure Docker service is started and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Verify Daemon Configuration                            * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify Docker daemon is running with correct configuration
+  ansible.builtin.command:
+    cmd: docker info --format json
+  register: docker_provisioning_daemon_info
+  changed_when: false
+  failed_when: false
+
+- name: Parse daemon information
+  ansible.builtin.set_fact:
+    docker_daemon_info: "{{ docker_provisioning_daemon_info.stdout | from_json }}"
+  when: docker_provisioning_daemon_info.rc == 0
+
+- name: Assert critical security settings are active
+  ansible.builtin.assert:
+    that:
+      - "'userns' in docker_daemon_info.SecurityOptions"
+      - "docker_daemon_info.DockerRootDir == docker_provisioning_data_root"
+      - "docker_daemon_info.Driver == docker_provisioning_storage_driver"
+      - "not docker_daemon_info.IPv6 | default(false)"
+    fail_msg: |
+      Docker daemon security configuration verification failed.
+      Please check /etc/docker/daemon.json and ensure all security settings are applied.
+    success_msg: "✓ Docker daemon security configuration verified successfully"
+  when: docker_daemon_info is defined
+
+- name: Display daemon configuration summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Docker Daemon Configuration Applied ==="
+      - "Storage Driver: {{ docker_daemon_info.Driver | default('N/A') }}"
+      - "Data Root: {{ docker_daemon_info.DockerRootDir | default('N/A') }}"
+      - "User Namespace Remapping: {{ 'userns' in docker_daemon_info.SecurityOptions | default([]) }}"
+      - "Bridge Network: {{ docker_provisioning_docker_bip }}"
+      - "IPv6 Support: {{ docker_daemon_info.IPv6 | default(false) }}"
+      - "Live Restore: {{ docker_daemon_info.LiveRestoreEnabled | default(false) }}"
+  when: docker_daemon_info is defined

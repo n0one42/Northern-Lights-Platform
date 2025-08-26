@@ -1,0 +1,207 @@
+---
+# ansible/roles/docker_provisioning/molecule/default/verify.yml
+# Verification tasks for the Docker provisioning role
+
+- name: Verify Docker provisioning
+  hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+    ##########################################################################
+    #                        SERVICE VERIFICATION                           #
+    ##########################################################################
+
+    - name: Verify Docker service is active
+      ansible.builtin.systemd:
+        name: docker
+      register: docker_service
+      failed_when: docker_service.status.ActiveState != "active"
+
+    - name: Verify Docker socket exists
+      ansible.builtin.stat:
+        path: /var/run/docker.sock
+      register: docker_socket
+      failed_when: not docker_socket.stat.exists
+
+    ##########################################################################
+    #                      SECURITY VERIFICATION                            #
+    ##########################################################################
+
+    - name: Verify dockremap user exists
+      ansible.builtin.user:
+        name: dockremap
+        state: present
+      register: dockremap_user
+      check_mode: true
+      failed_when: dockremap_user.changed
+
+    - name: Verify subordinate UID mapping exists
+      ansible.builtin.shell: |
+        grep -q "^dockremap:100000:65536" /etc/subuid
+      changed_when: false
+
+    - name: Verify subordinate GID mapping exists
+      ansible.builtin.shell: |
+        grep -q "^dockremap:100000:65536" /etc/subgid
+      changed_when: false
+
+    - name: Verify user namespace remapping is configured
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          docker info --format json | jq -r '.SecurityOptions[]' | grep -q "userns"
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+      register: userns_check
+
+    ##########################################################################
+    #                     DIRECTORY VERIFICATION                            #
+    ##########################################################################
+
+    - name: Verify Docker directories exist
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: docker_dirs
+      failed_when: not docker_dirs.stat.exists or not docker_dirs.stat.isdir
+      loop:
+        - /opt/docker
+        - /opt/docker/volumes
+        - /opt/docker/data
+        - /opt/docker/compose
+        - /opt/docker/config
+        - /opt/docker/logs
+        - /opt/docker/scripts
+        - /opt/docker/backups
+
+    - name: Verify directory permissions
+      ansible.builtin.stat:
+        path: /opt/docker/volumes
+      register: volumes_dir
+      failed_when: volumes_dir.stat.mode != "0701"
+
+    ##########################################################################
+    #                   CONFIGURATION VERIFICATION                          #
+    ##########################################################################
+
+    - name: Verify daemon.json exists
+      ansible.builtin.stat:
+        path: /etc/docker/daemon.json
+      register: daemon_config
+      failed_when: not daemon_config.stat.exists
+
+    - name: Verify daemon.json is valid JSON
+      ansible.builtin.shell: |
+        python3 -m json.tool /etc/docker/daemon.json > /dev/null
+      changed_when: false
+
+    - name: Check Docker daemon configuration
+      ansible.builtin.shell: |
+        docker info --format json
+      register: docker_info
+      changed_when: false
+
+    - name: Verify storage driver
+      ansible.builtin.assert:
+        that:
+          - (docker_info.stdout | from_json).Driver == docker_provisioning_storage_driver
+        fail_msg: "Storage driver mismatch"
+        success_msg: "Storage driver correctly configured"
+
+    - name: Verify data root
+      ansible.builtin.assert:
+        that:
+          - (docker_info.stdout | from_json).DockerRootDir == docker_provisioning_data_root
+        fail_msg: "Data root mismatch"
+        success_msg: "Data root correctly configured"
+
+    ##########################################################################
+    #                    FUNCTIONALITY VERIFICATION                         #
+    ##########################################################################
+
+    - name: Test Docker functionality - Hello World
+      community.docker.docker_container:
+        name: test_hello_world
+        image: hello-world:latest
+        detach: false
+        cleanup: true
+        auto_remove: true
+      register: hello_world_test
+
+    - name: Verify Hello World test succeeded
+      ansible.builtin.assert:
+        that:
+          - hello_world_test is succeeded
+        fail_msg: "Docker Hello World test failed"
+        success_msg: "Docker is functional"
+
+    - name: Test Docker Compose installation
+      ansible.builtin.shell: |
+        docker compose version
+      register: compose_version
+      changed_when: false
+
+    - name: Display Docker Compose version
+      ansible.builtin.debug:
+        msg: "Docker Compose version: {{ compose_version.stdout }}"
+
+    ##########################################################################
+    #                        SECURITY SCANNING                              #
+    ##########################################################################
+
+    - name: Check if security scan script exists
+      ansible.builtin.stat:
+        path: /opt/docker/scripts/security-scan.sh
+      register: security_scan_script
+
+    - name: Run security scan if available
+      ansible.builtin.shell: |
+        /opt/docker/scripts/security-scan.sh
+      register: security_scan_output
+      when: security_scan_script.stat.exists
+      changed_when: false
+
+    - name: Display security scan results
+      ansible.builtin.debug:
+        var: security_scan_output.stdout_lines
+      when: security_scan_script.stat.exists
+
+    ##########################################################################
+    #                         SUMMARY REPORT                                #
+    ##########################################################################
+
+    - name: Generate verification summary
+      ansible.builtin.set_fact:
+        verification_summary:
+          service_active: "{{ docker_service.status.ActiveState == 'active' }}"
+          socket_exists: "{{ docker_socket.stat.exists }}"
+          dockremap_configured: "{{ not dockremap_user.changed }}"
+          userns_enabled: "{{ userns_check.rc == 0 }}"
+          directories_created: true
+          daemon_config_valid: true
+          hello_world_test: "{{ hello_world_test is succeeded }}"
+          compose_installed: "{{ compose_version.rc == 0 }}"
+
+    - name: Display verification summary
+      ansible.builtin.debug:
+        msg: |
+          === Docker Provisioning Verification Summary ===
+
+          Service Status:
+            - Docker Service Active: {{ verification_summary.service_active }}
+            - Docker Socket Exists: {{ verification_summary.socket_exists }}
+
+          Security Configuration:
+            - Dockremap User Configured: {{ verification_summary.dockremap_configured }}
+            - User Namespace Remapping: {{ verification_summary.userns_enabled }}
+
+          Infrastructure:
+            - Directories Created: {{ verification_summary.directories_created }}
+            - Daemon Config Valid: {{ verification_summary.daemon_config_valid }}
+
+          Functionality:
+            - Hello World Test: {{ verification_summary.hello_world_test }}
+            - Docker Compose Installed: {{ verification_summary.compose_installed }}
+
+          Overall Status: {{ 'PASSED' if verification_summary.values() | select('equalto', true) | list | length == verification_summary.values() | list | length else 'FAILED' }}

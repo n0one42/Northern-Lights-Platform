@@ -1,0 +1,91 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# ansible/roles/docker_provisioning/templates/network-policy.sh.j2
+# Docker Network Isolation Policy Enforcement Script
+# Implements ADR-001 Pillar 2: Container-Container Isolation
+set -euo pipefail
+
+# Configuration from Ansible
+DOCKER_BRIDGE="{{ docker_provisioning_docker_bip | default('172.17.0.1/16') }}"
+DOCKER_SUBNET="${DOCKER_BRIDGE%/*}"
+DOCKER_ROOT="{{ docker_provisioning_docker_root }}"
+
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║    Docker Network Isolation Policy - ADR-001 Compliance     ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║ Enforcing container-to-container isolation (Pillar 2)        ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo
+
+# Function to check if rule exists
+rule_exists() {
+    iptables -C "$@" 2>/dev/null
+}
+
+# Function to add rule if missing
+add_rule() {
+    if ! rule_exists "$@"; then
+        iptables -A "$@"
+        echo "✓ Added: $*"
+    else
+        echo "• Exists: $*"
+    fi
+}
+
+# Ensure DOCKER-USER chain exists
+if ! iptables -L DOCKER-USER -n >/dev/null 2>&1; then
+    iptables -N DOCKER-USER
+    echo "✓ Created DOCKER-USER chain"
+fi
+
+echo
+echo "Applying network isolation rules..."
+echo
+
+# Core security rules for ADR-001 compliance
+
+# 1. Block direct container-to-container communication (ICC disabled)
+add_rule DOCKER-USER -i docker0 -o docker0 -m conntrack --ctstate NEW -j DROP
+
+# 2. Allow established connections to continue
+add_rule DOCKER-USER -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+# 3. Allow containers to reach the host
+add_rule DOCKER-USER -i docker0 ! -o docker0 -j ACCEPT
+
+# 4. Allow host to reach containers
+add_rule DOCKER-USER ! -i docker0 -o docker0 -j ACCEPT
+
+# 5. Block containers from accessing host localhost services (except DNS)
+add_rule DOCKER-USER -i docker0 -d 127.0.0.1/8 ! --dport 53 -j DROP
+
+# 6. Log and block suspicious activities
+add_rule DOCKER-USER -i docker0 -p tcp --dport 22 -j LOG --log-prefix "DOCKER-SSH-BLOCKED:"
+add_rule DOCKER-USER -i docker0 -p tcp --dport 22 -j DROP
+
+# 7. Default return (required for DOCKER-USER chain)
+add_rule DOCKER-USER -j RETURN
+
+echo
+echo "═══ Verification ═══"
+echo
+
+# Verify ICC is disabled
+if docker info 2>/dev/null | grep -q "ICC.*false"; then
+    echo "✓ Inter-Container Communication (ICC): DISABLED"
+else
+    echo "⚠ WARNING: ICC may be enabled - check /etc/docker/daemon.json"
+fi
+
+# Count rules
+RULE_COUNT=$(iptables -L DOCKER-USER -n | grep -c "^[A-Z]" || true)
+echo "✓ Active rules in DOCKER-USER chain: $RULE_COUNT"
+
+# Show summary
+echo
+echo "═══ Current Policy Rules ═══"
+iptables -L DOCKER-USER -n -v --line-numbers | head -20
+
+echo
+echo "✅ Network isolation policy applied successfully!"
+echo "   Run 'sudo iptables -L DOCKER-USER -n -v' to view all rules"

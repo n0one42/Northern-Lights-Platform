@@ -1,0 +1,369 @@
+---
+# inventories/group_vars/all/docker-main.yml
+# ? Create a own z_main.yml file in your env folder to override variables when needed. Do the same also for group_vars/all/ files
+
+# ? ######################################################################################## #
+# *                                  Docker Container Variables                              #
+# ? ######################################################################################## #
+# region docker common
+docker:
+  user_name: "dockerino"
+  user_ugid: 1242
+  home: "/opt/docker"
+  container_logs: "/opt/docker/logs"
+  container_secrets: "/opt/docker/secrets"
+
+# ADR-001 Security Constants - DO NOT CHANGE
+dockremap_user: "dockremap"
+subordinate_uid_start: 100000
+subordinate_range_size: 65536
+container_internal_uid: 1337  # Standard UID per ADR-001 Pillar 3
+# endregion
+
+# region dc_traefik
+# ? -----------------------------------------------------------------------------
+# *                                  dc_traefik                                 *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_traefik_root_app_dir_name: "traefik"
+dc_traefik_image: "traefik:3.2"
+dc_traefik_log_level: "INFO" # (Default: error) TRACE, DEBUG, INFO, WARN, ERROR, FATAL, PANIC # Needs at least info for crowdsec
+dc_traefik_web_port: 80
+dc_traefik_websecure_port: 443
+dc_traefik_insecure_port: 8180
+
+dc_traefik_crowdsec_enabled: false
+dc_traefik_insecure: true
+dc_traefik_acme_staging_mode: true
+# dc_traefik_cf_dns_api_token: "" # ! Mandatory !
+dc_traefik_basic_auth_user: "{{ auth_user }}"
+dc_traefik_basic_auth_password_hashed: "{{ auth_user_pw_htpasswd }}" # "404PasswordNotFound" # https://www.web2generators.com/apache-tools/htpasswd-generator
+dc_traefik_trusted_ip_ranges:
+  # Cloudflare IPs: https://www.cloudflare.com/ips/
+  - 103.21.244.0/22
+  - 103.22.200.0/22
+  - 103.31.4.0/22
+  - 104.16.0.0/13
+  - 104.24.0.0/14
+  - 108.162.192.0/18
+  - 131.0.72.0/22
+  - 141.101.64.0/18
+  - 162.158.0.0/15
+  - 172.64.0.0/13
+  - 173.245.48.0/20
+  - 188.114.96.0/20
+  - 190.93.240.0/20
+  - 197.234.240.0/22
+  - 198.41.128.0/17
+
+# ? local_ip_ranges is needed if using authelia / authentik also for the services inside the other VMs.
+# ? The traefik`s must trust each other to forward the headers
+dc_traefik_local_ip_ranges:
+  - "{{ vm09_aigateway.ip }}/32"
+  - "{{ vm10_ingress.ip }}/32"
+  - "{{ vm20_metrics.ip }}/32"
+  - "{{ vm31_application_1.ip }}/32"
+  - "{{ vm41_multimedia_1.ip }}/32"
+  - "{{ vm60_ai_stuff.ip }}/32"
+
+# * --------------------- CrowdSec Configuration -------------------- * #
+## * Container variables
+dc_traefik_crowdsec_sub_app_dir_name: "crowdsec"
+dc_traefik_crowdsec_image: "crowdsecurity/crowdsec:v1.6.4"
+dc_traefik_crowdsec_log_level: "INFO"
+# dc_traefik_crowdsec_web_port:
+
+dc_traefik_crowdsec_bouncer_key: "" # ? optional - generated if not set
+
+# * ------------------- SocketProxy Configuration ------------------- * #
+## * Container variables
+dc_traefik_socketproxy_sub_app_dir_name: "socketproxy"
+dc_traefik_socketproxy_image: "linuxserver/socket-proxy:1.26.2"
+dc_traefik_socketproxy_log_level: "debug"
+
+## * Permissions
+#### Not always needed - Can expose some information that your service does not need.
+dc_traefik_socketproxy_containers: 1
+# dc_traefik_socketproxy_networks: 1 # maybe needed
+# dc_traefik_socketproxy_services: 1 # maybe needed
+# dc_traefik_socketproxy_tasks: 1    # maybe needed
+# endregion
+
+# region dc_kestra
+# ? -----------------------------------------------------------------------------
+# *                                  dc_kestra                                  *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_kestra_root_app_dir_name: "kestra"
+dc_kestra_image: "kestra/kestra:v0.20.12"
+dc_kestra_ugid: 1000 # does currently not work otherwise
+dc_kestra_web_port: 8280
+dc_kestra_monitor_port: 8281
+
+# * ------------------- SocketProxy Configuration ------------------- * #
+## * Container variables
+dc_kestra_socketproxy_sub_app_dir_name: "socketproxy"
+dc_kestra_socketproxy_image: "linuxserver/socket-proxy:1.26.2"
+dc_kestra_socketproxy_log_level: "debug"
+
+## * Permissions
+dc_kestra_socketproxy_post: 1
+## ! Revoked by Default - Security critical - Maximum caution when enabling these.
+dc_kestra_socketproxy_allow_start: 1
+dc_kestra_socketproxy_allow_stop: 1
+dc_kestra_socketproxy_allow_restarts: 1
+dc_kestra_socketproxy_build: 1
+dc_kestra_socketproxy_containers: 1
+dc_kestra_socketproxy_exec: 1
+dc_kestra_socketproxy_images: 1
+dc_kestra_socketproxy_info: 1
+dc_kestra_socketproxy_networks: 1
+dc_kestra_socketproxy_volumes: 1
+
+# * ----------------------- DB Configuration ------------------------ * #
+## * Container variables
+dc_kestra_db_sub_app_dir_name: "db"
+dc_kestra_db_image: "bitnami/postgresql:17.2.0"
+dc_kestra_db_port: 5432
+
+dc_kestra_db_name: "kestra"
+dc_kestra_db_user_name: "kestra"
+dc_kestra_db_user_pw: "" # ? optional - generated if not set
+dc_kestra_db_superuser_pw: "" # ? optional - generated if not set
+# endregion
+
+# region dc_n8n
+# ? -----------------------------------------------------------------------------
+# *                                    dc_n8n                                   *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_n8n_root_app_dir_name: "n8n"
+dc_n8n_image: "n8nio/n8n:1.76.1"
+dc_n8n_ugid: 1000
+dc_n8n_log_level: "debug" # (Default: info) info, warn, error, debug
+dc_n8n_port: 5678
+
+# * ----------------------- DB Configuration ------------------------ * #
+## * Container variables
+dc_n8n_db_sub_app_dir_name: "db"
+dc_n8n_db_image: "bitnami/postgresql:17.2.0"
+dc_n8n_db_port: 5432
+
+dc_n8n_db_name: "n8n"
+dc_n8n_db_user_name: "n8n"
+dc_n8n_db_user_pw: "" # ? optional - generated if not set
+dc_n8n_db_superuser_pw: "" # ? optional - generated if not set
+
+# * ---------------------- Redis Configuration ---------------------- * #
+## * Container variables
+dc_n8n_redis_sub_app_dir_name: "redis"
+dc_n8n_redis_image: "bitnami/redis:7.4.2"
+dc_n8n_redis_port: 6379
+
+dc_n8n_redis_user_pw: "" # ? optional - generated if not set
+# endregion
+
+# region dc_langflow
+# ? -----------------------------------------------------------------------------
+# *                                 dc_langflow                                 *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_langflow_root_app_dir_name: "langflow"
+dc_langflow_image: "langflowai/langflow:1.1.3"
+dc_langflow_ugid: 1000 # ! does currently not work otherwise
+dc_langflow_log_level: "debug" # Needed to be able to use logger inside the components ; debug info warning error critical
+dc_langflow_port: 7860
+
+# * ----------------------- DB Configuration ------------------------ * #
+## * Container variables
+dc_langflow_db_sub_app_dir_name: "db"
+dc_langflow_db_image: "bitnami/postgresql:17.2.0"
+dc_langflow_db_port: 5432
+
+dc_langflow_db_name: "langflow"
+dc_langflow_db_user_name: "langflow"
+dc_langflow_db_user_pw: "" # ? optional - generated if not set
+dc_langflow_db_superuser_pw: "" # ? optional - generated if not set
+
+# * ---------------------- Redis Configuration ---------------------- * #
+## * Container variables
+dc_langflow_redis_sub_app_dir_name: "redis"
+dc_langflow_redis_image: "bitnami/redis:7.4.2"
+dc_langflow_redis_port: 6379
+
+dc_langflow_redis_user_pw: "" # ? optional - generated if not set
+# endregion
+
+# region dc_openwebui
+# ? -----------------------------------------------------------------------------
+# *                                 dc_openwebui                                *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_openwebui_root_app_dir_name: "openwebui"
+dc_openwebui_image: "ghcr.io/open-webui/open-webui:v0.5.7"
+dc_openwebui_ugid: 0 # ! does currently not work otherwise
+# dc_openwebui_log_level: "debug"
+dc_openwebui_port: 3000
+# endregion
+
+# region dc_qdrant
+# ? -----------------------------------------------------------------------------
+# *                                  dc_qdrant                                  *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_qdrant_root_app_dir_name: "qdrant-shared"
+dc_qdrant_image: "qdrant/qdrant:v1.13.2-unprivileged"
+dc_qdrant_log_level: "INFO"
+dc_qdrant_port: 6333
+
+dc_qdrant_add_to_networks: # ! Note: This networks has to be present! Uncomment if not intended to use with containers like n8n, langflow etc.
+  - net_name: "{{ dc_n8n_net.name }}"
+    net_qdrant_ip: "{{ dc_n8n_net.qdrant_ip }}"
+  - net_name: "{{ dc_langflow_net.name }}"
+    net_qdrant_ip: "{{ dc_langflow_net.qdrant_ip }}"
+# endregion
+
+# region dc_pqadmin
+# ? -----------------------------------------------------------------------------
+# *                                  dc_pqadmin                                 *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_pqadmin_root_app_dir_name: "pgadmin4"
+dc_pqadmin_image: "dpage/pgadmin4:9.0.0"
+dc_pqadmin_ugid: 5050 # ! does currently not work otherwise
+dc_pqadmin_port: 5050
+
+dc_pqadmin_email: "{{ auth_user_email }}"
+dc_pqadmin_pw: "{{ auth_user_pw }}" # ? optional - generated if not set
+
+dc_pqadmin_add_to_networks: # ! Note: This networks has to be present! Uncomment if not intended to use with containers like n8n, langflow etc.
+  - net_name: "{{ dc_kestra_net.name }}"
+    net_pqadmin_ip: "{{ dc_kestra_net.pqadmin_ip }}"
+  - net_name: "{{ dc_n8n_net.name }}"
+    net_pqadmin_ip: "{{ dc_n8n_net.pqadmin_ip }}"
+  - net_name: "{{ dc_langflow_net.name }}"
+    net_pqadmin_ip: "{{ dc_langflow_net.pqadmin_ip }}"
+# endregion
+
+# region dc_nocodb
+# ? -----------------------------------------------------------------------------
+# *                                  dc_nocodb                                 *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_nocodb_root_app_dir_name: "nocodb"
+dc_nocodb_image: "nocodb/nocodb:0.260.5"
+# dc_nocodb_ugid: 5050  # ! does currently not work otherwise
+dc_nocodb_port: 8084
+
+dc_nocodb_add_to_networks: # ! Note: This networks has to be present! Uncomment if not intended to use with containers like n8n, langflow etc.
+  - net_name: "{{ dc_kestra_net.name }}"
+    net_nocodb_ip: "{{ dc_kestra_net.nocodb_ip }}"
+  - net_name: "{{ dc_n8n_net.name }}"
+    net_nocodb_ip: "{{ dc_n8n_net.nocodb_ip }}"
+  - net_name: "{{ dc_langflow_net.name }}"
+    net_nocodb_ip: "{{ dc_langflow_net.nocodb_ip }}"
+# endregion
+
+# region dc_mssql
+# ? -----------------------------------------------------------------------------
+# *                                  dc_mssql                                   *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_mssql_root_app_dir_name: "mssql"
+dc_mssql_image: "mcr.microsoft.com/mssql/server:2022-CU17-ubuntu-22.04"
+dc_mssql_ugid: 10001 # ! does currently not work otherwise
+dc_mssql_tcp_port: 1433
+
+dc_mssql_sa_pw: "" # ? optional - generated if not set
+
+# dc_mssql_add_to_networks:  # ! Note: This networks has to be present! Uncomment if not intended to use with other containers
+#   - net_name: "{{ dc_kestra_net.name }}"
+#     net_mssql_ip: "{{ dc_kestra_net.mssql_ip }}"
+#   - net_name: "{{ dc_n8n_net.name }}"
+#     net_mssql_ip: "{{ dc_n8n_net.mssql_ip }}"
+#   - net_name: "{{ dc_langflow_net.name }}"
+#     net_mssql_ip: "{{ dc_langflow_net.mssql_ip }}"
+# endregion
+
+# region dc_cloudbeaver
+# ? -----------------------------------------------------------------------------
+# *                                dc_cloudbeaver                               *
+# ? -----------------------------------------------------------------------------
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+dc_cloudbeaver_root_app_dir_name: "cloudbeaver"
+dc_cloudbeaver_image: "dbeaver/cloudbeaver:24.3.4"
+dc_cloudbeaver_ugid: 8978 # ! does currently not work otherwise
+dc_cloudbeaver_web_port: 8978
+# dc_mssql_add_to_networks:  # ! Note: This networks has to be present! Uncomment if not intended to use with other containers
+#   - net_name: "{{ dc_kestra_net.name }}"
+#     net_mssql_ip: "{{ dc_kestra_net.mssql_ip }}"
+#   - net_name: "{{ dc_n8n_net.name }}"
+#     net_mssql_ip: "{{ dc_n8n_net.mssql_ip }}"
+#   - net_name: "{{ dc_langflow_net.name }}"
+#     net_mssql_ip: "{{ dc_langflow_net.mssql_ip }}"
+# endregion
+
+# region notes
+# ? ######################################################################################## #
+# *                                           Notes                                          #
+# ? ######################################################################################## #
+# Container defaults/main.yml Template
+# * -------------------- Container Configuration -------------------- * #
+## * Container variables
+
+## * Users configuration (like authelia users or such specific groups). Only if needed
+
+# * --------------------- CrowdSec Configuration -------------------- * #
+## * Container variables
+
+## * Users configuration (like authelia users or such specific groups). Only if needed
+
+# * ------------------- SocketProxy Configuration ------------------- * #
+## * Container variables
+
+## * Users configuration (like authelia users or such specific groups). Only if needed
+
+# * ----------------------- DB Configuration ------------------------ * #
+## * Container variables
+
+## * Users configuration (like authelia users or such specific groups). Only if needed
+
+# * ---------------------- Redis Configuration ---------------------- * #
+## * Container variables
+
+## * Users configuration (like authelia users or such specific groups). Only if needed
+
+# /opt/docker/
+# ├── grafana/
+# │   ├── config/
+# │   ├── data/
+# │   ├── db/
+# │   ├── redis/
+# │   └── ...
+# ├── prometheus/
+# │   ├── config/
+# │   ├── data/
+# │   └── ...
+# ├── nginx/
+# │   ├── config/
+# │   ├── data/
+# │   └── ...
+# ├── logs/
+# │   ├── grafana/
+# │   ├── prometheus/
+# │   └── nginx/
+# ├── secrets/
+# ├── common/
+# │   └── shared-resources/
+# └── docker-compose.yml  # (Optional: if managing multiple services together)
+# endregion

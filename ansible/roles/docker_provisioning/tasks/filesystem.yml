@@ -1,0 +1,262 @@
+# ansible/roles/docker_provisioning/tasks/filesystem.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                         Docker Provisioning Role - Filesystem Setup                       * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file creates the Docker directory structure as specified in the security blueprint:
+# /opt/docker/
+# ├── data/       # Docker's private directory (Mode: 0701)
+# ├── services/   # Ansible role data (Mode: 0750)
+# ├── secrets/    # Host-side secrets (Mode: 0700)
+# └── logs/       # Log directory for bind mounts (Mode: 0755)
+#
+# All directories are owned by root:root following the security model
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Create Root Docker Directory                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create Docker root directory
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_docker_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ docker_provisioning_dir_permissions.docker_root }}"
+  register: docker_provisioning_root_dir
+
+- name: Display Docker root directory status
+  ansible.builtin.debug:
+    msg: "Docker root directory {{ docker_provisioning_docker_root }} created/verified"
+  when: docker_provisioning_root_dir is defined
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Create Docker Data Directory                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create Docker data directory (Docker's private directory)
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_data_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ docker_provisioning_dir_permissions.data_root }}"
+  register: docker_provisioning_data_dir
+
+- name: Set immutable attribute on Docker data directory (security hardening)
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_data_root }}"
+    attributes: +i
+  when: false # Disabled by default as it can cause issues with Docker operations
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                              Create Docker Services Directory                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create Docker services directory (for Ansible role data and compose files)
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_services_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ docker_provisioning_dir_permissions.services }}"
+  register: docker_provisioning_services_dir_result
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                               Create Docker Secrets Directory                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create Docker secrets directory (for host-side secret files)
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_secrets_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ docker_provisioning_dir_permissions.secrets }}"
+  register: docker_provisioning_secrets_dir_result
+
+- name: Create secrets README file
+  ansible.builtin.copy:
+    content: |
+      # Docker Secrets Directory
+
+      This directory contains host-side secret files used by Docker containers.
+
+      ## Security Notes:
+      - This directory has mode 0700 (only root can access)
+      - Secrets should be referenced in docker-compose.yml using Docker secrets
+      - Never commit actual secret files to version control
+      - Use Ansible Vault or similar tools to manage secrets
+
+      ## Usage Example:
+      ```yaml
+      secrets:
+        db_password:
+          file: {{ docker_provisioning_secrets_dir }}/db_password
+      ```
+    dest: "{{ docker_provisioning_secrets_dir }}/README.md"
+    owner: root
+    group: root
+    mode: "0600"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Create Docker Logs Directory                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create Docker logs directory (parent for log file bind-mounts)
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_logs_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ docker_provisioning_dir_permissions.logs }}"
+  register: docker_provisioning_logs_dir_result
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                          Create Additional Security Directories                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create directory for Docker daemon configuration backups
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_docker_root }}/backups"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Create directory for custom Docker scripts
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_docker_root }}/scripts"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                           Create Service-Specific Log Directories                         * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Define common service log directories
+  ansible.builtin.set_fact:
+    docker_provisioning_service_logs:
+      - { name: "traefik", gid: "3000" }
+      - { name: "grafana", gid: "3000" }
+      - { name: "prometheus", gid: "3000" }
+      - { name: "loki", gid: "3000" }
+      - { name: "common", gid: "3000" }
+
+- name: Create logreaders group for shared log access
+  ansible.builtin.group:
+    name: logreaders
+    gid: "3000"
+    state: present
+    system: true
+
+- name: Create service-specific log directories
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_logs_dir }}/{{ item.name }}"
+    state: directory
+    owner: "{{ docker_provisioning_subordinate_uid_start | int + docker_provisioning_container_internal_uid | int }}"
+    group: logreaders
+    mode: "0750"
+  loop: "{{ docker_provisioning_service_logs }}"
+  when: docker_provisioning_service_logs is defined
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                              Verify Directory Structure                                   * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Verify all required directories exist
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: docker_provisioning_dir_check
+  loop:
+    - "{{ docker_provisioning_docker_root }}"
+    - "{{ docker_provisioning_data_root }}"
+    - "{{ docker_provisioning_services_dir }}"
+    - "{{ docker_provisioning_secrets_dir }}"
+    - "{{ docker_provisioning_logs_dir }}"
+
+- name: Assert all directories were created successfully
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isdir
+    fail_msg: "Directory {{ item.item }} does not exist or is not a directory"
+    success_msg: "Directory {{ item.item }} verified"
+  loop: "{{ docker_provisioning_dir_check.results }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                            Create Docker Environment File                                 * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create Docker environment variables file
+  ansible.builtin.template:
+    src: docker.env.j2
+    dest: /etc/docker.env
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+  vars:
+    docker_env_vars:
+      DOCKER_ROOT: "{{ docker_provisioning_docker_root }}"
+      DOCKER_DATA_ROOT: "{{ docker_provisioning_data_root }}"
+      DOCKER_SERVICES_DIR: "{{ docker_provisioning_services_dir }}"
+      DOCKER_SECRETS_DIR: "{{ docker_provisioning_secrets_dir }}"
+      DOCKER_LOGS_DIR: "{{ docker_provisioning_logs_dir }}"
+      DOCKER_CONTAINER_UID: "{{ docker_provisioning_container_internal_uid }}"
+      DOCKER_CONTAINER_GID: "{{ docker_provisioning_container_internal_gid }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                              Set ACLs for Enhanced Security                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if ACL support is available
+  ansible.builtin.command:
+    cmd: which setfacl
+  register: docker_provisioning_acl_check
+  changed_when: false
+  failed_when: false
+
+- name: Set default ACLs on logs directory (if ACL support available)
+  ansible.posix.acl:
+    path: "{{ docker_provisioning_logs_dir }}"
+    default: true
+    entity: logreaders
+    etype: group
+    permissions: rx
+    state: present
+  when: docker_provisioning_acl_check.rc == 0
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                               Display Filesystem Summary                                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Display filesystem setup summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Docker Filesystem Structure Created ==="
+      - "Root Directory: {{ docker_provisioning_docker_root }}"
+      - "├── data/       (Mode: {{ docker_provisioning_dir_permissions.data_root }}) - Docker's private directory"
+      - "├── services/   (Mode: {{ docker_provisioning_dir_permissions.services }}) - Ansible role data"
+      - "├── secrets/    (Mode: {{ docker_provisioning_dir_permissions.secrets }}) - Host-side secrets"
+      - "├── logs/       (Mode: {{ docker_provisioning_dir_permissions.logs }}) - Log directory"
+      - "├── backups/    (Mode: 0700) - Configuration backups"
+      - "└── scripts/    (Mode: 0750) - Custom scripts"
+      - ""
+      - "Security Notes:"
+      - "- All directories owned by root:root"
+      - "- Service logs use group 'logreaders' (GID: 3000) for shared access"
+      - "- Container UID {{ docker_provisioning_container_internal_uid }} maps to host UID {{ docker_provisioning_subordinate_uid_start | int + docker_provisioning_container_internal_uid | int }}"
+
+- name: Save filesystem configuration facts
+  ansible.builtin.set_fact:
+    docker_provisioning_filesystem_complete: true
+    docker_provisioning_directories:
+      root: "{{ docker_provisioning_docker_root }}"
+      data: "{{ docker_provisioning_data_root }}"
+      services: "{{ docker_provisioning_services_dir }}"
+      secrets: "{{ docker_provisioning_secrets_dir }}"
+      logs: "{{ docker_provisioning_logs_dir }}"

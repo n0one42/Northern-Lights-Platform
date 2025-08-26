@@ -1,0 +1,42 @@
+---
+# ansible/roles/docker_provisioning/molecule/default/converge.yml
+# Convergence playbook for testing the Docker provisioning role
+
+- name: Converge - Apply Docker provisioning role
+  hosts: all
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Display test environment information
+      ansible.builtin.debug:
+        msg: |
+          Testing Docker provisioning role on:
+          - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          - Hostname: {{ inventory_hostname }}
+          - Python: {{ ansible_python_version }}
+
+  roles:
+    - role: docker_provisioning
+
+  post_tasks:
+    - name: Verify Docker service is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+      register: docker_service_status
+
+    - name: Display Docker service status
+      ansible.builtin.debug:
+        var: docker_service_status
+
+    - name: Get Docker version
+      ansible.builtin.command: docker version --format json
+      register: docker_version_output
+      changed_when: false
+
+    - name: Display Docker version
+      ansible.builtin.debug:
+        msg: "Docker version installed: {{ (docker_version_output.stdout | from_json).Server.Version }}"
+      when: docker_version_output.stdout is defined

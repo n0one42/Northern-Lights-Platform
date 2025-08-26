@@ -1,0 +1,137 @@
+# ansible/roles/docker_provisioning/tasks/install_docker.yml
+---
+# * ---------------------------------------------------------------------------------------- * #
+# ?                         Docker Provisioning Role - Docker Installation                    * #
+# * ---------------------------------------------------------------------------------------- * #
+#
+# This file handles the installation of Docker CE and docker-compose plugin
+# following current best practices for Ubuntu/Debian systems.
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Remove Old Docker Versions                             * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Remove old Docker versions if present
+  ansible.builtin.apt:
+    name:
+      - docker
+      - docker-engine
+      - docker.io
+      - containerd
+      - runc
+    state: absent
+  when: docker_provisioning_fresh_install | default(true)
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Install Required System Packages                           * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  changed_when: false
+
+- name: Install required system packages for Docker
+  ansible.builtin.apt:
+    name: "{{ docker_provisioning_system_packages }}"
+    state: present
+    update_cache: true
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Configure Docker Repository                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Create keyrings directory
+  ansible.builtin.file:
+    path: "{{ docker_provisioning_keyrings_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /tmp/docker.asc
+    mode: "0644"
+
+- name: Dearmor Docker GPG key
+  ansible.builtin.shell: |
+    set -o pipefail
+    gpg --dearmor < /tmp/docker.asc > {{ docker_provisioning_gpg_key_path }}
+  args:
+    executable: /bin/bash
+    creates: "{{ docker_provisioning_gpg_key_path }}"
+  changed_when: false
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: >-
+      deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') }}
+      signed-by={{ docker_provisioning_gpg_key_path }}]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
+    state: present
+    filename: docker
+    update_cache: true
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Install Docker Packages                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Install Docker CE packages
+  ansible.builtin.apt:
+    name: "{{ docker_provisioning_packages }}"
+    state: present
+    update_cache: true
+  notify: Restart docker
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Verify Installation                                    * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check Docker version
+  ansible.builtin.command:
+    cmd: docker --version
+  register: docker_provisioning_version
+  changed_when: false
+  failed_when: docker_provisioning_version.rc != 0
+
+- name: Check docker-compose plugin installation
+  ansible.builtin.command:
+    cmd: docker compose version
+  register: docker_provisioning_compose_version
+  changed_when: false
+  failed_when: docker_provisioning_compose_version.rc != 0
+
+- name: Display Docker installation status
+  ansible.builtin.debug:
+    msg:
+      - "Docker installed successfully"
+      - "Docker version: {{ docker_provisioning_version.stdout }}"
+      - "Docker Compose version: {{ docker_provisioning_compose_version.stdout }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Enable Docker Service                                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure Docker service is enabled
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: stopped # Will be started after configuration
+    daemon_reload: true
+
+- name: Ensure containerd service is enabled
+  ansible.builtin.systemd:
+    name: containerd
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Save installation facts
+  ansible.builtin.set_fact:
+    docker_provisioning_install_complete: true
+    docker_provisioning_installed_version: "{{ docker_provisioning_version.stdout }}"
+    docker_provisioning_compose_installed_version: "{{ docker_provisioning_compose_version.stdout }}"

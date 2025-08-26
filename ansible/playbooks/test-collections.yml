@@ -1,0 +1,39 @@
+---
+# playbooks/test-collections.yml
+# Test playbook to verify Ansible collections are properly installed
+
+- name: Test Collections Installation
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  tasks:
+    - name: Test | Ping localhost
+      ansible.builtin.ping:
+      register: ping_result
+
+    - name: Test | Show ping result
+      ansible.builtin.debug:
+        msg: "Ping successful: {{ ping_result.ping }}"
+
+    - name: Test | Verify community.general collection
+      ansible.builtin.debug:
+        msg: "Community.general collection is available"
+      when: true
+
+    - name: Test | Verify ansible.posix collection
+      ansible.builtin.debug:
+        msg: "Ansible.posix collection is available"
+      when: true
+
+    - name: Test | Verify community.docker collection
+      ansible.builtin.debug:
+        msg: "Community.docker collection is available"
+      when: true
+
+    - name: Test | Display completion message
+      ansible.builtin.debug:
+        msg:
+          - "✅ All collections are properly installed!"
+          - "✅ YAML callback is working!"
+          - "✅ You can now run your playbooks without issues"

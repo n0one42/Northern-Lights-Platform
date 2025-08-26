@@ -1,33 +1,37 @@
 # Northern-Lights-Platform Ansible Requirements
 # These are the minimum versions required for enterprise-grade Ansible operations
-# 
+#
 # For local development on macOS:
 #   brew install ansible ansible-lint
 #
 # For CI/CD or other environments, use this file with pip:
 #   pip install -r requirements.txt
+#
+# Last Updated: August 2024
 
 # Core Ansible
-ansible>=8.0.0
-ansible-core>=2.15.0
+ansible>=11.0.0      # Latest stable release (Aug 2024)
+ansible-core>=2.18.0  # Core package included with ansible
 
 # Linting and validation
-ansible-lint>=6.22.0
-yamllint>=1.33.0
+ansible-lint>=24.0.0  # Latest stable with enhanced rule set
+yamllint>=1.35.0     # Latest YAML validation tool
 
 # Testing framework (optional but recommended)
-molecule>=6.0.0
-molecule-plugins[docker]>=23.5.0
+molecule>=24.0.0     # Latest testing framework
+molecule-plugins[docker]>=24.0.0  # Docker plugin support
 
 # Container-based execution (optional)
-ansible-navigator>=3.5.0
-ansible-builder>=3.0.0
+ansible-navigator>=24.0.0  # Latest navigator for container execution
+ansible-builder>=3.1.0     # Build custom execution environments
 
 # Common collections dependencies
-jmespath>=1.0.1  # Required for json_query filter
-netaddr>=0.9.0   # Required for network filters
-passlib>=1.7.4   # Required for password hashing
+jmespath>=1.0.1      # Required for json_query filter
+netaddr>=1.0.0       # Required for network filters
+passlib>=1.7.4       # Required for password hashing
+bcrypt>=4.0.1        # Modern password hashing
 
 # Development tools
-jinja2>=3.1.2
-pyyaml>=6.0
+jinja2>=3.1.4        # Template engine (latest stable)
+pyyaml>=6.0.1        # YAML processing
+python-dateutil>=2.8.2  # Date handling utilities

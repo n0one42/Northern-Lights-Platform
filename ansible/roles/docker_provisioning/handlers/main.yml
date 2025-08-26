@@ -3,6 +3,9 @@
 # * ---------------------------------------------------------------------------------------- * #
 # ?                            Docker Provisioning Role - Handlers                            * #
 # * ---------------------------------------------------------------------------------------- * #
+#
+# All handlers use fully qualified collection names (FQCN) for consistency
+# and compatibility with ansible-lint production profile
 
 - name: Reload systemd
   ansible.builtin.systemd:

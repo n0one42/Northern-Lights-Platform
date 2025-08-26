@@ -1,0 +1,52 @@
+---
+# ansible/requirements.yml
+# Main Ansible Galaxy requirements file for the Northern Lights Platform
+#
+# This is the SINGLE SOURCE OF TRUTH for all Ansible collections in this project.
+# Role-specific dependencies should be declared in the role's meta/main.yml file.
+#
+# Installation:
+#   ansible-galaxy collection install -r requirements.yml
+#
+# Force reinstall (if needed):
+#   ansible-galaxy collection install -r requirements.yml --force
+#
+# Install absolute latest versions (no constraints):
+#   ansible-galaxy collection install \
+#     ansible.posix community.general community.docker \
+#     ansible.utils community.crypto \
+#     --force --upgrade
+#
+# Last Updated: August 2025
+# Using ABSOLUTE LATEST stable versions
+
+collections:
+  # Core Ansible extensions for POSIX systems
+  # Latest stable: 2.1.0
+  - name: ansible.posix
+    version: ">=2.1.0,<3.0.0"
+
+  # Community maintained general modules and plugins
+  # Latest stable: 11.2.1 (NEW major version!)
+  - name: community.general
+    version: ">=11.0.0,<12.0.0"
+
+  # Docker container management
+  # Latest stable: 4.7.0
+  - name: community.docker
+    version: ">=4.7.0,<5.0.0"
+
+  # Ansible utility modules and filters
+  # Latest stable: 6.0.0 (NEW major version!)
+  - name: ansible.utils
+    version: ">=6.0.0,<7.0.0"
+
+  # Cryptographic operations (certificates, keys, etc.)
+  # Latest stable: 3.0.3 (NEW major version!)
+  - name: community.crypto
+    version: ">=3.0.0,<4.0.0"
+# Note: These are the ABSOLUTE LATEST versions as of August 2025
+# Major version changes:
+#   - ansible.utils: 5.x → 6.x
+#   - community.general: 10.x → 11.x
+#   - community.crypto: 2.x → 3.x

@@ -8,8 +8,7 @@
 # that should be preserved and not reformatted by Prettier
 
 # Configurations with aligned values
-ansible/inventories/group_vars/all/network.yml
-ansible/inventories/group_vars/all/docker-network.yml
+ansible/inventories/group_vars/**/*network*.yml
 
 # =================================================================================
 # Generated and External Files

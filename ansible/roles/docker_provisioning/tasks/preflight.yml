@@ -174,26 +174,37 @@
 
 - name: Check for existing network conflicts
   ansible.builtin.shell: |
+    set -o pipefail
     bridge_ip="{{ docker_provisioning_docker_bip | ansible.utils.ipaddr('address') }}"
     bridge_net="{{ docker_provisioning_bridge_network }}"
 
     # Check if the bridge IP is already in use
-    if ip addr show 2>/dev/null | grep -q "$bridge_ip"; then
-      interface=$(ip addr show | grep "$bridge_ip" | head -1 | awk '{print $NF}')
+    ip_check=$(ip addr show 2>/dev/null | grep -c "$bridge_ip" || true)
+    if [ "$ip_check" -gt 0 ]; then
+      # Get interface name without pipes in command substitution
+      ip addr show | grep "$bridge_ip" | head -1 > /tmp/ip_check.tmp
+      interface=$(awk '{print $NF}' < /tmp/ip_check.tmp)
+      rm -f /tmp/ip_check.tmp
       if [ "$interface" != "docker0" ]; then
         echo "IP_CONFLICT:$bridge_ip:$interface"
       fi
     fi
 
     # Check for route conflicts
-    if ip route 2>/dev/null | grep -q "$bridge_net"; then
-      existing_route=$(ip route | grep "$bridge_net" | head -1)
+    route_check=$(ip route 2>/dev/null | grep -c "$bridge_net" || true)
+    if [ "$route_check" -gt 0 ]; then
+      # Get route info without pipes in command substitution
+      ip route | grep "$bridge_net" | head -1 > /tmp/route_check.tmp
+      existing_route=$(cat /tmp/route_check.tmp)
+      rm -f /tmp/route_check.tmp
       if ! echo "$existing_route" | grep -q "docker0"; then
         echo "ROUTE_CONFLICT:$bridge_net"
       fi
     fi
 
     echo "NETWORK_CHECK_COMPLETE"
+  args:
+    executable: /bin/bash
   register: docker_provisioning_network_check
   changed_when: false
   failed_when: false
@@ -492,48 +503,49 @@
 
 - name: Set execution path messages for full installation
   ansible.builtin.set_fact:
-    docker_provisioning_execution_messages:
-      - "╔════════════════════════════════════════════════════════════╗"
-      - "║                    Execution Path Decision                 ║"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ → FULL INSTALLATION: Docker not found, installing fresh    ║"
-      - "║   • Will create dockremap user and configure subuid/subgid ║"
-      - "║   • Will create filesystem structure                       ║"
-      - "║   • Will install Docker packages                           ║"
-      - "║   • Will configure daemon.json and network policies        ║"
-      - "╚════════════════════════════════════════════════════════════╝"
+    docker_provisioning_execution_messages: |
+      ╔════════════════════════════════════════════════════════════╗
+      ║                    Execution Path Decision                 ║
+      ╠════════════════════════════════════════════════════════════╣
+      ║ → FULL INSTALLATION: Docker not found, installing fresh    ║
+      ║   • Will create dockremap user and configure subuid/subgid ║
+      ║   • Will create filesystem structure                       ║
+      ║   • Will install Docker packages                           ║
+      ║   • Will configure daemon.json and network policies        ║
+      ╚════════════════════════════════════════════════════════════╝
   when: docker_provisioning_execution_path == 'full_installation'
 
 - name: Set execution path messages for config update
   ansible.builtin.set_fact:
-    docker_provisioning_execution_messages:
-      - "╔════════════════════════════════════════════════════════════╗"
-      - "║                    Execution Path Decision                 ║"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ → CONFIG UPDATE: Docker installed, updating configuration  ║"
-      - "║   • Will update daemon.json if changed                     ║"
-      - "║   • Will update network policies if needed                 ║"
-      - "║   • Will restart Docker only if configuration changed      ║"
-      - "║   • Skipping: user setup, filesystem, package installation ║"
-      - "╚════════════════════════════════════════════════════════════╝"
+    docker_provisioning_execution_messages: |
+      ╔════════════════════════════════════════════════════════════╗
+      ║                    Execution Path Decision                 ║
+      ╠════════════════════════════════════════════════════════════╣
+      ║ → CONFIG UPDATE: Docker installed, updating configuration  ║
+      ║   • Will update daemon.json if changed                     ║
+      ║   • Will update network policies if needed                 ║
+      ║   • Will restart Docker only if configuration changed      ║
+      ║   • Skipping: user setup, filesystem, package installation ║
+      ╚════════════════════════════════════════════════════════════╝
   when: docker_provisioning_execution_path == 'config_update_only'
 
 - name: Set execution path messages for validation only
   ansible.builtin.set_fact:
-    docker_provisioning_execution_messages:
-      - "╔════════════════════════════════════════════════════════════╗"
-      - "║                    Execution Path Decision                 ║"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ → VALIDATION ONLY: Docker installed and configured         ║"
-      - "║   • Configuration is already up-to-date                    ║"
-      - "║   • Will only run validation checks                        ║"
-      - "║   • No changes will be made to the system                  ║"
-      - "╚════════════════════════════════════════════════════════════╝"
+    docker_provisioning_execution_messages: |
+      ╔════════════════════════════════════════════════════════════╗
+      ║                    Execution Path Decision                 ║
+      ╠════════════════════════════════════════════════════════════╣
+      ║ → VALIDATION ONLY: Docker installed and configured         ║
+      ║   • Configuration is already up-to-date                    ║
+      ║   • Will only run validation checks                        ║
+      ║   • No changes will be made to the system                  ║
+      ╚════════════════════════════════════════════════════════════╝
   when: docker_provisioning_execution_path == 'validation_only'
 
 - name: Display execution path decision
   ansible.builtin.debug:
-    msg: "{{ docker_provisioning_execution_messages }}"
+    msg: |
+      {{ docker_provisioning_execution_messages }}
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Create Ansible Facts Directory                         * #
@@ -547,6 +559,26 @@
     owner: root
     group: root
 
+# Debug: Check if facts file exists and get its content
+- name: Check existing Docker provisioning facts file
+  ansible.builtin.stat:
+    path: /etc/ansible/facts.d/docker_provisioning.fact
+  register: docker_provisioning_facts_stat
+
+- name: Read existing facts if present
+  ansible.builtin.slurp:
+    src: /etc/ansible/facts.d/docker_provisioning.fact
+  register: docker_provisioning_existing_facts
+  when: docker_provisioning_facts_stat.stat.exists | default(false)
+
+- name: Debug - Show facts comparison
+  ansible.builtin.debug:
+    msg: |
+      Facts file exists: {{ docker_provisioning_facts_stat.stat.exists | default(false) }}
+      Current facts content hash: {{ docker_provisioning_system_info | to_nice_json | hash('sha256') }}
+      Existing facts content hash: {{ (docker_provisioning_existing_facts.content | b64decode | hash('sha256')) if docker_provisioning_existing_facts is defined and docker_provisioning_existing_facts.content is defined else 'N/A' }}
+    verbosity: 1
+
 - name: Save Docker provisioning facts
   ansible.builtin.copy:
     content: "{{ docker_provisioning_system_info | to_nice_json }}"
@@ -557,9 +589,9 @@
 
 - name: Display preflight summary
   ansible.builtin.debug:
-    msg:
-      - "=== Preflight Checks Complete ==="
-      - "Docker Installed: {{ docker_provisioning_is_installed }}"
-      - "Docker Running: {{ docker_provisioning_is_running }}"
-      - "Config Update Needed: {{ docker_provisioning_daemon_needs_update }}"
-      - "Execution Path: {{ docker_provisioning_execution_path | upper }}"
+    msg: |
+      === Preflight Checks Complete ===
+      Docker Installed: {{ docker_provisioning_is_installed }}
+      Docker Running: {{ docker_provisioning_is_running }}
+      Config Update Needed: {{ docker_provisioning_daemon_needs_update }}
+      Execution Path: {{ docker_provisioning_execution_path | upper }}

@@ -1,6 +1,16 @@
 # Northern-Lights-Platform/ansible/Makefile
 .PHONY: help setup install-collections update-collections clean-collections verify-collections lint test clean
 
+# ================================================================
+# ENVIRONMENT CONFIGURATION - Force local-only collections usage
+# ================================================================
+# This ensures we ONLY use project-local collections, ignoring any global installations
+# The path is relative to this Makefile's location
+export ANSIBLE_COLLECTIONS_PATH := ./.ansible/collections
+
+# Get the local collections path from ansible.cfg if it exists, otherwise use default
+COLLECTIONS_PATH := $(shell grep -E '^collections_path' ansible.cfg 2>/dev/null | sed 's/^[^=]*=[[:space:]]*//' | sed 's/[[:space:]]*$$//' || echo "./.ansible/collections")
+
 # Default target - show help
 help:
 	@echo "Northern Lights Platform - Ansible Makefile"
@@ -34,24 +44,38 @@ setup:
 
 install-collections:
 	@echo "Installing Ansible collections from requirements.yml..."
-	ansible-galaxy collection install -r requirements.yml
-	@echo "✅ Collections installed successfully"
+	@echo "📁 Collections path: $(COLLECTIONS_PATH)"
+	@echo "🚫 Ignoring any global collections"
+	ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" \
+	ansible-galaxy collection install -r requirements.yml \
+		--collections-path "$(COLLECTIONS_PATH)" \
+		--force
+	@echo "✅ Collections installed successfully to $(COLLECTIONS_PATH)"
 
 update-collections:
 	@echo "Force updating all Ansible collections..."
-	ansible-galaxy collection install -r requirements.yml --force
-	@echo "✅ Collections updated successfully"
+	@echo "📁 Collections path: $(COLLECTIONS_PATH)"
+	@echo "🚫 Ignoring any global collections"
+	ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" \
+	ansible-galaxy collection install -r requirements.yml \
+		--collections-path "$(COLLECTIONS_PATH)" \
+		--force
+	@echo "✅ Collections updated successfully in $(COLLECTIONS_PATH)"
 
 update-collections-latest:
 	@echo "Installing ABSOLUTE LATEST versions (no version constraints)..."
+	@echo "📁 Collections path: $(COLLECTIONS_PATH)"
+	@echo "🚫 Ignoring any global collections"
+	ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" \
 	ansible-galaxy collection install \
 		ansible.posix \
 		community.general \
 		community.docker \
 		ansible.utils \
 		community.crypto \
+		--collections-path "$(COLLECTIONS_PATH)" \
 		--force --upgrade
-	@echo "✅ Collections updated to absolute latest versions"
+	@echo "✅ Collections updated to absolute latest versions in $(COLLECTIONS_PATH)"
 
 clean-collections:
 	@echo "Removing all installed collections..."
@@ -64,15 +88,21 @@ verify-collections:
 	@echo "Verifying Ansible Collections"
 	@echo "======================================"
 	@echo ""
-	@echo "📦 Installed Collections:"
-	@echo "------------------------"
-	@ansible-galaxy collection list --format yaml 2>/dev/null || ansible-galaxy collection list
+	@echo "📁 Using collections from: $(COLLECTIONS_PATH)"
+	@echo "🚫 Global collections are IGNORED"
+	@echo ""
+	@echo "📦 Installed Collections (local only):"
+	@echo "--------------------------------------"
+	@ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" \
+	ansible-galaxy collection list --collections-path "$(COLLECTIONS_PATH)" --format yaml 2>/dev/null || \
+	ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" \
+	ansible-galaxy collection list --collections-path "$(COLLECTIONS_PATH)"
 	@echo ""
 	@echo "🔍 Required vs Installed Versions:"
 	@echo "----------------------------------"
 	@echo "Checking requirements.yml compliance..."
 	@for collection in ansible.posix community.general community.docker ansible.utils community.crypto; do \
-		installed=$$(ansible-galaxy collection list 2>/dev/null | grep "$$collection" | head -1 | awk '{print $$2}'); \
+		installed=$$(ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" ansible-galaxy collection list --collections-path "$(COLLECTIONS_PATH)" 2>/dev/null | grep "$$collection" | head -1 | awk '{print $$2}'); \
 		if [ -n "$$installed" ]; then \
 			echo "✅ $$collection: $$installed"; \
 		else \
@@ -84,10 +114,12 @@ verify-collections:
 	@echo "----------------------"
 	@echo "Ansible version: $$(ansible --version | head -1)"
 	@echo "Config file: $$(ansible --version | grep 'config file' | cut -d'=' -f2)"
+	@echo "Collections path (from env): $$ANSIBLE_COLLECTIONS_PATH"
+	@echo "Collections path (from cfg): $$(grep -E '^collections_path' ansible.cfg 2>/dev/null | sed 's/.*=\s*//' || echo 'not set')"
 	@echo "Python version: $$(python3 --version)"
 	@echo ""
 	@echo "✨ Testing YAML output format..."
-	@if ansible localhost -m ping 2>&1 | grep -q "pong"; then \
+	@if ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" ansible localhost -m ping 2>&1 | grep -q "pong"; then \
 		echo "✅ YAML callback is configured correctly"; \
 	else \
 		echo "⚠️  YAML callback might need configuration"; \
@@ -95,7 +127,8 @@ verify-collections:
 
 lint:
 	@echo "Running linters..."
-	ansible-lint
+	@echo "📁 Using collections from: $(COLLECTIONS_PATH)"
+	ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" ansible-lint
 	@if command -v yamllint &> /dev/null; then \
 		yamllint .; \
 	else \
@@ -104,7 +137,9 @@ lint:
 
 test:
 	@echo "Running playbook tests..."
+	@echo "📁 Using collections from: $(COLLECTIONS_PATH)"
 	@if [ -f playbooks/test.yml ]; then \
+		ANSIBLE_COLLECTIONS_PATH="$(COLLECTIONS_PATH)" \
 		ansible-playbook playbooks/test.yml --check --diff; \
 	else \
 		echo "No test playbook found at playbooks/test.yml"; \

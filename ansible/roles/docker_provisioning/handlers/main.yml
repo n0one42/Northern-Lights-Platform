@@ -65,7 +65,9 @@
     name: auditd
     state: restarted
   become: true
-  when: ansible_os_family in ["RedHat", "Debian"]
+  when:
+    - ansible_os_family in ["RedHat", "Debian"]
+    - ansible_facts.services['auditd.service'] is defined | default(false)
 
 - name: Prune docker system
   ansible.builtin.command:

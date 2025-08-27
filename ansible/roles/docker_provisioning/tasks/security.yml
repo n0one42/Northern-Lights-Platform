@@ -34,6 +34,34 @@
 # ?                                    Audit Configuration                                    * #
 # * ---------------------------------------------------------------------------------------- * #
 
+- name: Check if auditd is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/auditd
+  register: docker_provisioning_auditd_binary
+
+- name: Check if audit rules directory exists
+  ansible.builtin.stat:
+    path: /etc/audit/rules.d
+  register: docker_provisioning_audit_rules_dir
+
+- name: Debug audit system status
+  ansible.builtin.debug:
+    msg:
+      - "Auditd installed: {{ docker_provisioning_auditd_binary.stat.exists | default(false) }}"
+      - "Audit rules directory exists: {{ docker_provisioning_audit_rules_dir.stat.exists | default(false) }}"
+    verbosity: 1
+
+- name: Ensure audit rules directory exists
+  ansible.builtin.file:
+    path: /etc/audit/rules.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - ansible_os_family in ["RedHat", "Debian"]
+    - docker_provisioning_auditd_binary.stat.exists | default(false)
+
 - name: Configure audit rules for Docker
   ansible.builtin.copy:
     content: |
@@ -47,8 +75,22 @@
     owner: root
     group: root
     mode: "0640"
-  when: ansible_os_family in ["RedHat", "Debian"]
+  when:
+    - ansible_os_family in ["RedHat", "Debian"]
+    - docker_provisioning_auditd_binary.stat.exists | default(false)
+    - docker_provisioning_audit_rules_dir.stat.exists | default(false)
   notify: Restart auditd
+
+- name: Display audit configuration status
+  ansible.builtin.debug:
+    msg: |
+      {% if not docker_provisioning_auditd_binary.stat.exists | default(false) %}
+      Note: Auditd is not installed on this system. Docker audit rules were skipped.
+      To enable audit logging, install auditd package and re-run this playbook.
+      {% else %}
+      Docker audit rules have been configured in /etc/audit/rules.d/docker.rules
+      {% endif %}
+  when: ansible_os_family in ["RedHat", "Debian"]
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Security Compliance Script                             * #

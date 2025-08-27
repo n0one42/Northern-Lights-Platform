@@ -112,41 +112,41 @@
 
 - name: Display provisioning completion summary
   ansible.builtin.debug:
-    msg:
-      - "╔════════════════════════════════════════════════════════════╗"
-      - "║          Docker Provisioning Complete - ADR-001           ║"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ Execution Path: {{ docker_provisioning_execution_path | upper | ljust(44) }}║"
-      - "║ Execution Time: {{ docker_provisioning_execution_time | default('0') }}s{{ ' ' * (43 - docker_provisioning_execution_time | default('0') | string | length) }}║"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ Three Pillars Security Model Successfully Implemented:     ║"
-      - "║                                                            ║"
-      - "║ ✓ Pillar 1: Host-Container Isolation                      ║"
-      - "║   └─ userns-remap: {{ docker_provisioning_dockremap_user | ljust(39) }}║"
-      - "║                                                            ║"
-      - "║ ✓ Pillar 2: Container-Container Isolation                 ║"
-      - "║   └─ Named Volumes enforced, ICC disabled                 ║"
-      - "║                                                            ║"
-      - "║ ✓ Pillar 3: Intra-Container Security                      ║"
-      - "║   └─ Standard UID: {{ docker_provisioning_container_internal_uid | ljust(38) }}║"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ Optimizations Applied:                                    ║"
-      - "{% if docker_provisioning_execution_path == 'validation_only' %}"
-      - "║   • Skipped all tasks (configuration up-to-date)          ║"
-      - "║   • Saved ~60-90 seconds vs full execution                ║"
-      - "{% elif docker_provisioning_execution_path == 'config_update_only' %}"
-      - "║   • Skipped installation tasks                            ║"
-      - "║   • Updated only changed configurations                   ║"
-      - "║   • Saved ~30-45 seconds vs full execution                ║"
-      - "{% else %}"
-      - "║   • Full installation completed                           ║"
-      - "║   • All security features configured                      ║"
-      - "{% endif %}"
-      - "╠════════════════════════════════════════════════════════════╣"
-      - "║ Security Tools Available:                                 ║"
-      - "║   • {{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh"
-      - "║   • {{ docker_provisioning_docker_root }}/scripts/docker-network-policy.sh"
-      - "╚════════════════════════════════════════════════════════════╝"
+    msg: |
+      ╔═════════════════════════════════════════════════════════════╗
+      ║          Docker Provisioning Complete - ADR-001             ║
+      ╠═════════════════════════════════════════════════════════════╣
+      ║ Execution Path: {{ '%-44s' | format(docker_provisioning_execution_path | upper) }}║
+      ║ Execution Time: {{ docker_provisioning_execution_time | default('0') }}s{{ ' ' * (43 - docker_provisioning_execution_time | default('0') | string | length) }}║
+      ╠═════════════════════════════════════════════════════════════╣
+      ║ Three Pillars Security Model Successfully Implemented:      ║
+      ║                                                             ║
+      ║ ✓ Pillar 1: Host-Container Isolation                        ║
+      ║   └─ userns-remap: {{ '%-39s' | format(docker_provisioning_dockremap_user) }}  ║
+      ║                                                             ║
+      ║ ✓ Pillar 2: Container-Container Isolation                   ║
+      ║   └─ Named Volumes enforced, ICC disabled                   ║
+      ║                                                             ║
+      ║ ✓ Pillar 3: Intra-Container Security                        ║
+      ║   └─ Standard UID: {{ '%-38s' | format(docker_provisioning_container_internal_uid | string) }}   ║
+      ╠═════════════════════════════════════════════════════════════╣
+      ║ Optimizations Applied:                                      ║
+      {% if docker_provisioning_execution_path == 'validation_only' %}
+      ║   • Skipped all tasks (configuration up-to-date)            ║
+      ║   • Saved ~60-90 seconds vs full execution                  ║
+      {% elif docker_provisioning_execution_path == 'config_update_only' %}
+      ║   • Skipped installation tasks                              ║
+      ║   • Updated only changed configurations                     ║
+      ║   • Saved ~30-45 seconds vs full execution                  ║
+      {% else %}
+      ║   • Full installation completed                             ║
+      ║   • All security features configured                        ║
+      {% endif %}
+      ╠═════════════════════════════════════════════════════════════╣
+      ║ Security Tools Available:                                   ║
+      ║   • {{ docker_provisioning_docker_root }}/scripts/security-compliance-check.sh        ║
+      ║   • {{ docker_provisioning_docker_root }}/scripts/docker-network-policy.sh            ║
+      ╚═════════════════════════════════════════════════════════════╝
   tags:
     - docker
     - docker-summary

@@ -25,6 +25,24 @@
     path: /etc/docker/daemon.json
   register: docker_provisioning_daemon_existing
 
+# Debug: Check if backup is needed
+- name: Check for recent daemon.json backup
+  ansible.builtin.find:
+    paths: "{{ docker_provisioning_docker_root }}/backups"
+    patterns: "daemon.json.*"
+    age: "-1h" # Less than 1 hour old
+  register: docker_provisioning_recent_backups
+  when: docker_provisioning_daemon_existing.stat.exists | default(false) | bool
+
+- name: Debug - Show backup status
+  ansible.builtin.debug:
+    msg: |
+      Daemon.json exists: {{ docker_provisioning_daemon_existing.stat.exists | default(false) }}
+      Recent backups found: {{ docker_provisioning_recent_backups.files | default([]) | length }}
+      Backup directory: {{ docker_provisioning_docker_root }}/backups
+    verbosity: 1
+  when: docker_provisioning_daemon_existing.stat.exists | default(false) | bool
+
 - name: Backup existing daemon configuration if present
   ansible.builtin.copy:
     src: /etc/docker/daemon.json
@@ -33,7 +51,9 @@
     owner: root
     group: root
     mode: "0600"
-  when: docker_provisioning_daemon_existing.stat.exists | default(false) | bool
+  when:
+    - docker_provisioning_daemon_existing.stat.exists | default(false) | bool
+    - docker_provisioning_recent_backups.files | default([]) | length == 0 # Only backup if no recent backup exists
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Configuration Comparison                               * #
@@ -139,7 +159,7 @@
 # ?                                    Conditional Service Restart                            * #
 # * ---------------------------------------------------------------------------------------- * #
 
-- name: Reload systemd daemon if configuration changed  # noqa: no-handler
+- name: Reload systemd daemon if configuration changed # noqa: no-handler
   ansible.builtin.systemd:
     daemon_reload: true
   when:
@@ -158,7 +178,7 @@
   until: docker_provisioning_service_start is not failed
   when: docker_provisioning_is_installed | default(false)
 
-- name: Restart Docker only if configuration changed  # noqa: no-handler
+- name: Restart Docker only if configuration changed # noqa: no-handler
   ansible.builtin.systemd:
     name: docker
     state: restarted
@@ -168,7 +188,7 @@
     - docker_provisioning_is_running | default(false)
   register: docker_provisioning_docker_restarted
 
-- name: Wait for Docker socket after restart  # noqa: no-handler
+- name: Wait for Docker socket after restart # noqa: no-handler
   ansible.builtin.wait_for:
     path: /var/run/docker.sock
     state: present
@@ -181,21 +201,55 @@
 
 - name: Check Docker daemon status after configuration
   ansible.builtin.systemd:
-    name: docker
-  register: docker_provisioning_daemon_status
+    name: docker.service
+  register: docker_provisioning_daemon_status_raw
   when: docker_provisioning_is_installed | default(false)
+
+# Debug the structure to understand what we're getting
+- name: Debug raw systemd status structure
+  ansible.builtin.debug:
+    var: docker_provisioning_daemon_status_raw
+    verbosity: 1
+  when:
+    - docker_provisioning_daemon_status_raw is defined
+    - docker_provisioning_is_installed | default(false)
+
+# Alternative method to get service status with proper structure
+- name: Get Docker service facts
+  ansible.builtin.service_facts:
+  register: docker_provisioning_service_facts
+  when: docker_provisioning_is_installed | default(false)
+
+- name: Debug service facts structure
+  ansible.builtin.debug:
+    msg: "Docker service state from service_facts: {{ ansible_facts.services['docker.service'].state | default('unknown') }}"
+    verbosity: 1
+  when:
+    - docker_provisioning_is_installed | default(false)
+    - ansible_facts.services is defined
+
+# Set a normalized status variable
+- name: Set Docker daemon status from service facts
+  ansible.builtin.set_fact:
+    docker_provisioning_daemon_status:
+      active: "{{ ansible_facts.services['docker.service'].state == 'running' if 'docker.service' in ansible_facts.services else false }}"
+      state: "{{ ansible_facts.services['docker.service'].state | default('unknown') if 'docker.service' in ansible_facts.services else 'not-found' }}"
+  when:
+    - docker_provisioning_is_installed | default(false)
+    - ansible_facts.services is defined
 
 - name: Debug Docker service status if not active
   ansible.builtin.debug:
     msg: |
-      Docker service status: {{ docker_provisioning_daemon_status.status.ActiveState }}
+      Docker service status: {{ docker_provisioning_daemon_status.state | default('unknown') }}
+      Docker service active: {{ docker_provisioning_daemon_status.active | default(false) }}
       If Docker failed to start, check:
       - sudo journalctl -xeu docker.service
       - sudo cat /etc/docker/daemon.json
       - Verify dockremap user exists with proper subordinate UID/GID ranges
   when:
     - docker_provisioning_daemon_status is defined
-    - docker_provisioning_daemon_status.status.ActiveState != "active"
+    - not (docker_provisioning_daemon_status.active | default(false) | bool)
 
 - name: Verify Docker daemon is running with correct configuration
   ansible.builtin.command:
@@ -205,7 +259,7 @@
   failed_when: false
   when:
     - docker_provisioning_daemon_status is defined
-    - docker_provisioning_daemon_status.status.ActiveState == "active"
+    - docker_provisioning_daemon_status.active | default(false) | bool
 
 - name: Parse daemon information
   ansible.builtin.set_fact:
@@ -220,8 +274,8 @@
 - name: Assert critical security settings are active
   ansible.builtin.assert:
     that:
-      - "'userns' in docker_daemon_info.SecurityOptions"
-      - "docker_daemon_info.DockerRootDir == docker_provisioning_data_root"
+      - "'name=userns' in docker_daemon_info.SecurityOptions or 'userns' in docker_daemon_info.SecurityOptions"
+      - "docker_daemon_info.DockerRootDir == docker_provisioning_data_root or docker_daemon_info.DockerRootDir.startswith(docker_provisioning_data_root + '/')"
       - "docker_daemon_info.Driver == docker_provisioning_storage_driver"
       - "not (docker_daemon_info.IPv6 | default(false) | bool)"
     fail_msg: |
@@ -236,18 +290,18 @@
 
 - name: Display daemon configuration summary
   ansible.builtin.debug:
-    msg:
-      - "=== Docker Daemon Configuration ==="
-      - "Configuration Update Required: {{ docker_provisioning_daemon_update_required | default(false) }}"
-      - "Docker Restarted: {{ docker_provisioning_docker_restarted.changed | default(false) }}"
-      - "{% if docker_daemon_info is defined %}"
-      - "Storage Driver: {{ docker_daemon_info.Driver | default('N/A') }}"
-      - "Data Root: {{ docker_daemon_info.DockerRootDir | default('N/A') }}"
-      - "User Namespace Remapping: {{ 'userns' in docker_daemon_info.SecurityOptions | default([]) }}"
-      - "Bridge Network: {{ docker_provisioning_docker_bip }}"
-      - "IPv6 Support: {{ docker_daemon_info.IPv6 | default(false) | bool }}"
-      - "Live Restore: {{ docker_daemon_info.LiveRestoreEnabled | default(false) | bool }}"
-      - "{% else %}"
-      - "Docker daemon information not available"
-      - "{% endif %}"
+    msg: |
+      === Docker Daemon Configuration ===
+      Configuration Update Required: {{ docker_provisioning_daemon_update_required | default(false) }}
+      Docker Restarted: {{ docker_provisioning_docker_restarted.changed | default(false) }}
+      {% if docker_daemon_info is defined %}
+      Storage Driver: {{ docker_daemon_info.Driver | default('N/A') }}
+      Data Root: {{ docker_daemon_info.DockerRootDir | default('N/A') }}
+      User Namespace Remapping: {{ 'userns' in docker_daemon_info.SecurityOptions | default([]) }}
+      Bridge Network: {{ docker_provisioning_docker_bip }}
+      IPv6 Support: {{ docker_daemon_info.IPv6 | default(false) | bool }}
+      Live Restore: {{ docker_daemon_info.LiveRestoreEnabled | default(false) | bool }}
+      {% else %}
+      Docker daemon information not available
+      {% endif %}
   when: docker_provisioning_execution_path != 'validation_only'

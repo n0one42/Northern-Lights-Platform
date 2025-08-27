@@ -7,6 +7,13 @@
 # All handlers use fully qualified collection names (FQCN) for consistency
 # and compatibility with ansible-lint production profile
 
+- name: Restart timesyncd
+  ansible.builtin.systemd:
+    name: systemd-timesyncd.service
+    state: restarted
+    daemon_reload: true
+  become: true
+
 - name: Reload systemd
   ansible.builtin.systemd:
     daemon_reload: true

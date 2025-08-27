@@ -23,7 +23,7 @@
 
 # Subordinate UID/GID range for user namespace remapping
 # These values define the range of UIDs/GIDs available for remapping
-# docker_provisioning_subordinate_uid_start: 100000
+# docker_provisioning_subordinate_uid_start: 500000
 # docker_provisioning_subordinate_range_size: 65536
 
 # Standard UID/GID for container processes (Pillar 3: Intra-Container Security)

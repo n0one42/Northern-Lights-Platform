@@ -1,11 +1,12 @@
 # ansible/roles/docker_provisioning/tasks/preflight.yml
 ---
 # * ---------------------------------------------------------------------------------------- * #
-# ?                           Docker Provisioning Role - Preflight Checks                     * #
+# ?                           Docker Provisioning Role - Enhanced Preflight Checks            * #
 # * ---------------------------------------------------------------------------------------- * #
 #
-# This file performs all pre-installation checks and assertions to ensure
+# This file performs comprehensive pre-installation checks and assertions to ensure
 # the system is ready for Docker installation with our security model.
+# It also detects existing Docker installations for fast-path execution.
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Gather Required Facts                                  * #
@@ -20,6 +21,7 @@
       - os_family
       - architecture
       - date_time
+      - network
   when: ansible_os_family is not defined
 
 # * ---------------------------------------------------------------------------------------- * #
@@ -33,6 +35,185 @@
       - "!min"
       - date_time
   when: ansible_date_time is not defined
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Docker Status Detection                                * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check if Docker is already installed
+  ansible.builtin.command:
+    cmd: which docker
+  register: docker_provisioning_docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Check Docker service status if installed
+  ansible.builtin.systemd:
+    name: docker
+  register: docker_provisioning_service_status
+  when: docker_provisioning_docker_check.rc == 0
+  failed_when: false
+
+- name: Get Docker info if running
+  ansible.builtin.command:
+    cmd: docker info --format json
+  register: docker_provisioning_current_info
+  when:
+    - docker_provisioning_docker_check.rc == 0
+    - docker_provisioning_service_status.status.ActiveState | default('inactive') == 'active'
+  changed_when: false
+  failed_when: false
+
+- name: Check existing daemon.json
+  ansible.builtin.stat:
+    path: /etc/docker/daemon.json
+  register: docker_provisioning_daemon_stat
+
+- name: Read existing daemon.json if present
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  register: docker_provisioning_daemon_current
+  when: docker_provisioning_daemon_stat.stat.exists | default(false)
+
+- name: Set Docker installation status facts
+  ansible.builtin.set_fact:
+    docker_provisioning_is_installed: "{{ docker_provisioning_docker_check.rc == 0 }}"
+    docker_provisioning_is_running: "{{ docker_provisioning_service_status.status.ActiveState | default('inactive') == 'active' if docker_provisioning_docker_check.rc == 0 else false }}"
+    docker_provisioning_current_daemon_config: "{{ docker_provisioning_daemon_current.content | b64decode | from_json if docker_provisioning_daemon_stat.stat.exists | default(false) else {} }}"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Conflict Detection - Subuid/Subgid                     * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Check existing /etc/subuid entries
+  ansible.builtin.shell: |
+    set -o pipefail
+    if [ -f /etc/subuid ]; then
+      # Check if dockremap user already has an entry
+      if grep -q "^{{ docker_provisioning_dockremap_user }}:" /etc/subuid; then
+        existing_entry=$(grep "^{{ docker_provisioning_dockremap_user }}:" /etc/subuid)
+        echo "DOCKREMAP_EXISTS:$existing_entry"
+      fi
+
+      # Check if the desired UID range is already allocated to another user
+      while IFS=: read -r user start size; do
+        if [ "$user" != "{{ docker_provisioning_dockremap_user }}" ]; then
+          end=$((start + size - 1))
+          desired_start={{ docker_provisioning_subordinate_uid_start }}
+          desired_end=$((desired_start + {{ docker_provisioning_subordinate_range_size }} - 1))
+
+          # Check for overlap
+          if [ $start -le $desired_end ] && [ $end -ge $desired_start ]; then
+            echo "CONFLICT:$user:$start:$size"
+          fi
+        fi
+      done < /etc/subuid
+    else
+      echo "FILE_NOT_FOUND"
+    fi
+  args:
+    executable: /bin/bash
+  register: docker_provisioning_subuid_check
+  changed_when: false
+
+- name: Check existing /etc/subgid entries
+  ansible.builtin.shell: |
+    set -o pipefail
+    if [ -f /etc/subgid ]; then
+      # Check if dockremap user already has an entry
+      if grep -q "^{{ docker_provisioning_dockremap_user }}:" /etc/subgid; then
+        existing_entry=$(grep "^{{ docker_provisioning_dockremap_user }}:" /etc/subgid)
+        echo "DOCKREMAP_EXISTS:$existing_entry"
+      fi
+
+      # Check if the desired GID range is already allocated to another user
+      while IFS=: read -r user start size; do
+        if [ "$user" != "{{ docker_provisioning_dockremap_user }}" ]; then
+          end=$((start + size - 1))
+          desired_start={{ docker_provisioning_subordinate_uid_start }}
+          desired_end=$((desired_start + {{ docker_provisioning_subordinate_range_size }} - 1))
+
+          # Check for overlap
+          if [ $start -le $desired_end ] && [ $end -ge $desired_start ]; then
+            echo "CONFLICT:$user:$start:$size"
+          fi
+        fi
+      done < /etc/subgid
+    else
+      echo "FILE_NOT_FOUND"
+    fi
+  args:
+    executable: /bin/bash
+  register: docker_provisioning_subgid_check
+  changed_when: false
+
+- name: Validate subuid/subgid availability
+  ansible.builtin.fail:
+    msg: |
+      Subordinate UID/GID range conflict detected!
+
+      Desired range: {{ docker_provisioning_subordinate_uid_start }}:{{ docker_provisioning_subordinate_range_size }}
+
+      Subuid check: {{ docker_provisioning_subuid_check.stdout_lines | join(', ') }}
+      Subgid check: {{ docker_provisioning_subgid_check.stdout_lines | join(', ') }}
+
+      Please resolve the conflict by either:
+      1. Changing the subordinate_uid_start value in your configuration
+      2. Removing the conflicting entries from /etc/subuid and /etc/subgid
+  when:
+    - not docker_provisioning_is_installed
+    - docker_provisioning_subuid_check.stdout is search('CONFLICT:') or docker_provisioning_subgid_check.stdout is search('CONFLICT:')
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Network Bridge IP Conflict Detection                   * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Extract bridge IP network
+  ansible.builtin.set_fact:
+    docker_provisioning_bridge_network: "{{ docker_provisioning_docker_bip | ansible.utils.ipaddr('network/prefix') }}"
+
+- name: Check for existing network conflicts
+  ansible.builtin.shell: |
+    bridge_ip="{{ docker_provisioning_docker_bip | ansible.utils.ipaddr('address') }}"
+    bridge_net="{{ docker_provisioning_bridge_network }}"
+
+    # Check if the bridge IP is already in use
+    if ip addr show 2>/dev/null | grep -q "$bridge_ip"; then
+      interface=$(ip addr show | grep "$bridge_ip" | head -1 | awk '{print $NF}')
+      if [ "$interface" != "docker0" ]; then
+        echo "IP_CONFLICT:$bridge_ip:$interface"
+      fi
+    fi
+
+    # Check for route conflicts
+    if ip route 2>/dev/null | grep -q "$bridge_net"; then
+      existing_route=$(ip route | grep "$bridge_net" | head -1)
+      if ! echo "$existing_route" | grep -q "docker0"; then
+        echo "ROUTE_CONFLICT:$bridge_net"
+      fi
+    fi
+
+    echo "NETWORK_CHECK_COMPLETE"
+  register: docker_provisioning_network_check
+  changed_when: false
+  failed_when: false
+  when: not docker_provisioning_is_installed
+
+- name: Validate network availability
+  ansible.builtin.fail:
+    msg: |
+      Network configuration conflict detected!
+
+      Desired Docker bridge: {{ docker_provisioning_docker_bip }}
+      Network check results: {{ docker_provisioning_network_check.stdout_lines | select('match', '^(IP_CONFLICT|ROUTE_CONFLICT)') | list }}
+
+      Please resolve the conflict by either:
+      1. Changing the docker_net.bip value in your configuration
+      2. Removing the conflicting network interface
+  when:
+    - not docker_provisioning_is_installed
+    - docker_provisioning_network_check is defined
+    - docker_provisioning_network_check.stdout is search('IP_CONFLICT:') or docker_provisioning_network_check.stdout is search('ROUTE_CONFLICT:')
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Ansible Version Check                                  * #
@@ -143,13 +324,6 @@
 # ?                                    Check for Conflicting Software                         * #
 # * ---------------------------------------------------------------------------------------- * #
 
-- name: Check if Docker is already installed
-  ansible.builtin.command:
-    cmd: which docker
-  register: docker_provisioning_docker_check
-  changed_when: false
-  failed_when: false
-
 - name: Check if Podman is installed (conflicts with Docker)
   ansible.builtin.command:
     cmd: which podman
@@ -227,13 +401,78 @@
     msg: "Kernel version: {{ docker_provisioning_kernel_version.stdout }}"
 
 # * ---------------------------------------------------------------------------------------- * #
+# ?                                    Configuration Comparison                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Generate desired daemon.json configuration
+  ansible.builtin.set_fact:
+    docker_provisioning_desired_daemon_config:
+      userns-remap: "{{ docker_provisioning_dockremap_user }}"
+      data-root: "{{ docker_provisioning_data_root }}"
+      bip: "{{ docker_provisioning_docker_bip }}"
+      mtu: "{{ docker_provisioning_mtu }}"
+      default-address-pools: "{{ docker_provisioning_default_address_pools }}"
+      ipv6: "{{ docker_provisioning_ipv6_enabled }}"
+      storage-driver: "{{ docker_provisioning_storage_driver }}"
+      log-driver: "{{ docker_provisioning_log_driver }}"
+      log-opts:
+        max-size: "{{ docker_provisioning_log_max_size }}"
+        max-file: "{{ docker_provisioning_log_max_file }}"
+        compress: "true"
+        labels: "environment,role,service"
+      live-restore: "{{ docker_provisioning_live_restore }}"
+      default-runtime: "{{ docker_provisioning_default_runtime | default('runc') }}"
+      exec-opts: ["native.cgroupdriver=systemd"]
+      features:
+        buildkit: true
+      experimental: false
+      no-new-privileges: true
+      selinux-enabled: false
+      userland-proxy: false
+      default-ulimits:
+        nofile:
+          Hard: 1048576
+          Soft: 1048576
+      max-concurrent-downloads: 10
+      max-concurrent-uploads: 5
+      shutdown-timeout: 30
+      debug: false
+      icc: false
+      iptables: true
+      ip-forward: true
+      ip-masq: true
+      default-shm-size: "64M"
+
+- name: Check if daemon configuration needs update
+  ansible.builtin.set_fact:
+    docker_provisioning_daemon_needs_update: >-
+      {{
+        docker_provisioning_current_daemon_config != docker_provisioning_desired_daemon_config
+        or not docker_provisioning_daemon_stat.stat.exists | default(false)
+      }}
+
+# * ---------------------------------------------------------------------------------------- * #
 # ?                                    System State Recording                                 * #
 # * ---------------------------------------------------------------------------------------- * #
+
+- name: Determine execution path
+  ansible.builtin.set_fact:
+    docker_provisioning_execution_path: >-
+      {%- if not docker_provisioning_is_installed -%}
+        full_installation
+      {%- elif docker_provisioning_daemon_needs_update -%}
+        config_update_only
+      {%- else -%}
+        validation_only
+      {%- endif -%}
+    docker_provisioning_skip_installation: "{{ docker_provisioning_is_installed }}"
+    docker_provisioning_skip_host_setup: "{{ docker_provisioning_is_installed and not docker_provisioning_daemon_needs_update }}"
+    docker_provisioning_skip_filesystem: "{{ docker_provisioning_is_installed }}"
 
 - name: Record pre-installation system state
   ansible.builtin.set_fact:
     docker_provisioning_preflight_complete: true
-    docker_provisioning_fresh_install: "{{ docker_provisioning_docker_check.rc != 0 }}"
+    docker_provisioning_fresh_install: "{{ not docker_provisioning_is_installed }}"
     docker_provisioning_system_info:
       os_family: "{{ ansible_os_family }}"
       distribution: "{{ ansible_distribution }}"
@@ -242,15 +481,59 @@
       kernel: "{{ docker_provisioning_kernel_version.stdout }}"
       apparmor: "{{ docker_provisioning_apparmor_available }}"
       selinux: "{{ docker_provisioning_selinux_available }}"
+      docker_installed: "{{ docker_provisioning_is_installed }}"
+      docker_running: "{{ docker_provisioning_is_running }}"
+      config_needs_update: "{{ docker_provisioning_daemon_needs_update }}"
+      execution_path: "{{ docker_provisioning_execution_path }}"
 
-- name: Display installation type
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Display Execution Path                                 * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Set execution path messages for full installation
+  ansible.builtin.set_fact:
+    docker_provisioning_execution_messages:
+      - "╔════════════════════════════════════════════════════════════╗"
+      - "║                    Execution Path Decision                 ║"
+      - "╠════════════════════════════════════════════════════════════╣"
+      - "║ → FULL INSTALLATION: Docker not found, installing fresh    ║"
+      - "║   • Will create dockremap user and configure subuid/subgid ║"
+      - "║   • Will create filesystem structure                       ║"
+      - "║   • Will install Docker packages                           ║"
+      - "║   • Will configure daemon.json and network policies        ║"
+      - "╚════════════════════════════════════════════════════════════╝"
+  when: docker_provisioning_execution_path == 'full_installation'
+
+- name: Set execution path messages for config update
+  ansible.builtin.set_fact:
+    docker_provisioning_execution_messages:
+      - "╔════════════════════════════════════════════════════════════╗"
+      - "║                    Execution Path Decision                 ║"
+      - "╠════════════════════════════════════════════════════════════╣"
+      - "║ → CONFIG UPDATE: Docker installed, updating configuration  ║"
+      - "║   • Will update daemon.json if changed                     ║"
+      - "║   • Will update network policies if needed                 ║"
+      - "║   • Will restart Docker only if configuration changed      ║"
+      - "║   • Skipping: user setup, filesystem, package installation ║"
+      - "╚════════════════════════════════════════════════════════════╝"
+  when: docker_provisioning_execution_path == 'config_update_only'
+
+- name: Set execution path messages for validation only
+  ansible.builtin.set_fact:
+    docker_provisioning_execution_messages:
+      - "╔════════════════════════════════════════════════════════════╗"
+      - "║                    Execution Path Decision                 ║"
+      - "╠════════════════════════════════════════════════════════════╣"
+      - "║ → VALIDATION ONLY: Docker installed and configured         ║"
+      - "║   • Configuration is already up-to-date                    ║"
+      - "║   • Will only run validation checks                        ║"
+      - "║   • No changes will be made to the system                  ║"
+      - "╚════════════════════════════════════════════════════════════╝"
+  when: docker_provisioning_execution_path == 'validation_only'
+
+- name: Display execution path decision
   ansible.builtin.debug:
-    msg: >-
-      {% if docker_provisioning_fresh_install %}
-      Performing fresh Docker installation with security hardening
-      {% else %}
-      Docker is already installed - will reconfigure with security hardening
-      {% endif %}
+    msg: "{{ docker_provisioning_execution_messages }}"
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Create Ansible Facts Directory                         * #
@@ -271,3 +554,12 @@
     mode: "0644"
     owner: root
     group: root
+
+- name: Display preflight summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Preflight Checks Complete ==="
+      - "Docker Installed: {{ docker_provisioning_is_installed }}"
+      - "Docker Running: {{ docker_provisioning_is_running }}"
+      - "Config Update Needed: {{ docker_provisioning_daemon_needs_update }}"
+      - "Execution Path: {{ docker_provisioning_execution_path | upper }}"

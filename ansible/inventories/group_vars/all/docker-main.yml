@@ -15,9 +15,9 @@ docker:
 
 # ADR-001 Security Constants - DO NOT CHANGE
 dockremap_user: "dockremap"
-subordinate_uid_start: 100000
+subordinate_uid_start: 500000
 subordinate_range_size: 65536
-container_internal_uid: 1337  # Standard UID per ADR-001 Pillar 3
+container_internal_uid: 1337 # Standard UID per ADR-001 Pillar 3
 # endregion
 
 # region dc_traefik

@@ -38,12 +38,12 @@
 
     - name: Verify subordinate UID mapping exists
       ansible.builtin.shell: |
-        grep -q "^dockremap:100000:65536" /etc/subuid
+        grep -q "^dockremap:500000:65536" /etc/subuid
       changed_when: false
 
     - name: Verify subordinate GID mapping exists
       ansible.builtin.shell: |
-        grep -q "^dockremap:100000:65536" /etc/subgid
+        grep -q "^dockremap:500000:65536" /etc/subgid
       changed_when: false
 
     - name: Verify user namespace remapping is configured

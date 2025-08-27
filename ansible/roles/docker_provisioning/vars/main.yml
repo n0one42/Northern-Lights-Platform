@@ -84,7 +84,7 @@ docker_provisioning_dir_permissions:
 docker_provisioning_dockremap_user: "{{ dockremap_user | default('dockremap') }}"
 
 # Subordinate UID/GID configuration
-docker_provisioning_subordinate_uid_start: "{{ subordinate_uid_start | default(100000) }}"
+docker_provisioning_subordinate_uid_start: "{{ subordinate_uid_start | default(500000) }}"
 docker_provisioning_subordinate_range_size: "{{ subordinate_range_size | default(65536) }}"
 
 # Container internal UID/GID - standard across all containers

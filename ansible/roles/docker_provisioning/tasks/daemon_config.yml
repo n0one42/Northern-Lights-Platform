@@ -6,6 +6,7 @@
 #
 # This file configures the Docker daemon with security-first settings per ADR-001.
 # Implements all three security pillars through daemon.json configuration.
+# Optimized to only restart Docker when configuration actually changes.
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Pre-Configuration Setup                                * #
@@ -35,6 +36,29 @@
   when: docker_provisioning_daemon_existing.stat.exists | default(false) | bool
 
 # * ---------------------------------------------------------------------------------------- * #
+# ?                                    Configuration Comparison                               * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Read current daemon.json if it exists
+  ansible.builtin.slurp:
+    src: /etc/docker/daemon.json
+  register: docker_provisioning_current_daemon_raw
+  when: docker_provisioning_daemon_existing.stat.exists | default(false)
+
+- name: Parse current daemon.json
+  ansible.builtin.set_fact:
+    docker_provisioning_current_daemon: "{{ docker_provisioning_current_daemon_raw.content | b64decode | from_json }}"
+  when: docker_provisioning_current_daemon_raw is defined and docker_provisioning_current_daemon_raw.content is defined
+
+- name: Check if daemon configuration needs update
+  ansible.builtin.set_fact:
+    docker_provisioning_daemon_update_required: >-
+      {{
+        docker_provisioning_daemon_needs_update | default(true)
+        or (docker_provisioning_current_daemon | default({}) != docker_provisioning_desired_daemon_config)
+      }}
+
+# * ---------------------------------------------------------------------------------------- * #
 # ?                                    Deploy Daemon Configuration                            * #
 # * ---------------------------------------------------------------------------------------- * #
 
@@ -47,10 +71,16 @@
     mode: "0644"
     backup: true
     validate: python3 -m json.tool %s
+  register: docker_provisioning_daemon_deployed
+  when: docker_provisioning_daemon_update_required | default(true)
   notify:
     - Restart docker
     - Wait for Docker daemon
-  register: docker_provisioning_daemon_deployed
+
+- name: Skip daemon configuration update (already up-to-date)
+  ansible.builtin.debug:
+    msg: "Docker daemon.json is already up-to-date, skipping update"
+  when: not docker_provisioning_daemon_update_required | default(true)
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Systemd Service Configuration                          * #
@@ -63,6 +93,11 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Check existing Docker systemd override
+  ansible.builtin.stat:
+    path: /etc/systemd/system/docker.service.d/override.conf
+  register: docker_provisioning_systemd_override_existing
 
 - name: Configure Docker systemd service overrides
   ansible.builtin.copy:
@@ -94,19 +129,22 @@
     group: root
     mode: "0644"
   register: docker_provisioning_systemd_override
+  when: not docker_provisioning_systemd_override_existing.stat.exists | default(false)
   notify:
     - Reload systemd
     - Restart docker
     - Wait for Docker daemon
 
 # * ---------------------------------------------------------------------------------------- * #
-# ?                                    Reload Systemd and Start Docker                        * #
+# ?                                    Conditional Service Restart                            * #
 # * ---------------------------------------------------------------------------------------- * #
 
-- name: Reload systemd daemon after configuration changes  # noqa: no-handler
+- name: Reload systemd daemon if configuration changed  # noqa: no-handler
   ansible.builtin.systemd:
     daemon_reload: true
-  when: docker_provisioning_daemon_deployed.changed | default(false) | bool
+  when:
+    - docker_provisioning_daemon_deployed.changed | default(false) | bool or docker_provisioning_systemd_override.changed | default(false) | bool
+    - docker_provisioning_is_installed | default(false)
 
 - name: Ensure Docker service is started and enabled
   ansible.builtin.systemd:
@@ -118,22 +156,34 @@
   retries: 3
   delay: 10
   until: docker_provisioning_service_start is not failed
+  when: docker_provisioning_is_installed | default(false)
 
-- name: Wait for Docker socket to be available  # noqa: no-handler
+- name: Restart Docker only if configuration changed  # noqa: no-handler
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+  when:
+    - docker_provisioning_daemon_deployed.changed | default(false) | bool
+    - docker_provisioning_is_installed | default(false)
+    - docker_provisioning_is_running | default(false)
+  register: docker_provisioning_docker_restarted
+
+- name: Wait for Docker socket after restart  # noqa: no-handler
   ansible.builtin.wait_for:
     path: /var/run/docker.sock
     state: present
     timeout: 30
-  when: docker_provisioning_service_start.changed | default(false) | bool
+  when: docker_provisioning_docker_restarted.changed | default(false) | bool
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Verify Daemon Configuration                            * #
 # * ---------------------------------------------------------------------------------------- * #
 
-- name: Check Docker daemon status before verification
+- name: Check Docker daemon status after configuration
   ansible.builtin.systemd:
     name: docker
   register: docker_provisioning_daemon_status
+  when: docker_provisioning_is_installed | default(false)
 
 - name: Debug Docker service status if not active
   ansible.builtin.debug:
@@ -143,7 +193,9 @@
       - sudo journalctl -xeu docker.service
       - sudo cat /etc/docker/daemon.json
       - Verify dockremap user exists with proper subordinate UID/GID ranges
-  when: docker_provisioning_daemon_status.status.ActiveState != "active"
+  when:
+    - docker_provisioning_daemon_status is defined
+    - docker_provisioning_daemon_status.status.ActiveState != "active"
 
 - name: Verify Docker daemon is running with correct configuration
   ansible.builtin.command:
@@ -151,7 +203,9 @@
   register: docker_provisioning_daemon_info
   changed_when: false
   failed_when: false
-  when: docker_provisioning_daemon_status.status.ActiveState == "active"
+  when:
+    - docker_provisioning_daemon_status is defined
+    - docker_provisioning_daemon_status.status.ActiveState == "active"
 
 - name: Parse daemon information
   ansible.builtin.set_fact:
@@ -183,11 +237,17 @@
 - name: Display daemon configuration summary
   ansible.builtin.debug:
     msg:
-      - "=== Docker Daemon Configuration Applied ==="
+      - "=== Docker Daemon Configuration ==="
+      - "Configuration Update Required: {{ docker_provisioning_daemon_update_required | default(false) }}"
+      - "Docker Restarted: {{ docker_provisioning_docker_restarted.changed | default(false) }}"
+      - "{% if docker_daemon_info is defined %}"
       - "Storage Driver: {{ docker_daemon_info.Driver | default('N/A') }}"
       - "Data Root: {{ docker_daemon_info.DockerRootDir | default('N/A') }}"
       - "User Namespace Remapping: {{ 'userns' in docker_daemon_info.SecurityOptions | default([]) }}"
       - "Bridge Network: {{ docker_provisioning_docker_bip }}"
       - "IPv6 Support: {{ docker_daemon_info.IPv6 | default(false) | bool }}"
       - "Live Restore: {{ docker_daemon_info.LiveRestoreEnabled | default(false) | bool }}"
-  when: docker_daemon_info is defined
+      - "{% else %}"
+      - "Docker daemon information not available"
+      - "{% endif %}"
+  when: docker_provisioning_execution_path != 'validation_only'

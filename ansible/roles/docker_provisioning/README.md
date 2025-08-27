@@ -13,7 +13,7 @@ security blueprint.
 1. **Host-Container Isolation** (Pillar 1)
 
    - Implements `userns-remap` with a dedicated `dockremap` user
-   - Maps container UIDs to unprivileged host UIDs (100000-165535)
+   - Maps container UIDs to unprivileged host UIDs (500000-165535)
    - Prevents container breakout attacks from escalating to host compromise
 
 2. **Container-Container Isolation** (Pillar 2)
@@ -56,7 +56,7 @@ All directories are owned by `root:root` following the security model.
 ```yaml
 # Core security configuration
 dockremap_user: "dockremap"
-subordinate_uid_start: 100000
+subordinate_uid_start: 500000
 subordinate_range_size: 65536
 container_internal_uid: 1337
 
@@ -152,7 +152,7 @@ services:
 
 ### UID Mapping
 
-- Container UID 0 (root) → Host UID 100000
+- Container UID 0 (root) → Host UID 500000
 - Container UID 1337 → Host UID 101337
 - All container UIDs are mapped to unprivileged host UIDs
 
@@ -196,7 +196,7 @@ After installation, the role validates:
 
 3. **Subordinate UID Conflicts**
    - Check `/etc/subuid` and `/etc/subgid` for conflicts
-   - Ensure range 100000-165535 is available
+   - Ensure range 500000-165535 is available
 
 ### Logs and Debugging
 

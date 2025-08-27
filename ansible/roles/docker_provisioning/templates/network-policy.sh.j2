@@ -57,7 +57,12 @@ add_rule DOCKER-USER -i docker0 ! -o docker0 -j ACCEPT
 add_rule DOCKER-USER ! -i docker0 -o docker0 -j ACCEPT
 
 # 5. Block containers from accessing host localhost services (except DNS)
-add_rule DOCKER-USER -i docker0 -d 127.0.0.1/8 ! --dport 53 -j DROP
+# Note: We need separate rules for TCP and UDP, and proper port matching
+# Allow DNS (port 53) to localhost
+add_rule DOCKER-USER -i docker0 -d 127.0.0.1/8 -p tcp --dport 53 -j ACCEPT
+add_rule DOCKER-USER -i docker0 -d 127.0.0.1/8 -p udp --dport 53 -j ACCEPT
+# Block all other localhost access
+add_rule DOCKER-USER -i docker0 -d 127.0.0.1/8 -j DROP
 
 # 6. Log and block suspicious activities
 add_rule DOCKER-USER -i docker0 -p tcp --dport 22 -j LOG --log-prefix "DOCKER-SSH-BLOCKED:"

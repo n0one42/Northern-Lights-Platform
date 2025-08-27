@@ -147,32 +147,15 @@
     - docker_provisioning_user_group_added.changed | default(false)
 
 # * ---------------------------------------------------------------------------------------- * #
-# ?                                Configure System Parameters                                * #
-# * ---------------------------------------------------------------------------------------- * #
-
-- name: Configure kernel parameters for Docker
-  ansible.posix.sysctl:
-    name: "{{ item.name }}"
-    value: "{{ item.value }}"
-    state: present
-    sysctl_file: /etc/sysctl.d/99-docker.conf
-    reload: true
-  loop:
-    - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
-    - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
-    - { name: "net.ipv4.ip_forward", value: "1" }
-    - { name: "net.ipv6.conf.all.forwarding", value: "0" } # IPv6 disabled per security model
-  notify: Restart docker
-
-# * ---------------------------------------------------------------------------------------- * #
 # ?                                Load Required Kernel Modules                               * #
 # * ---------------------------------------------------------------------------------------- * #
+# Note: These modules must be loaded BEFORE configuring sysctl parameters
 
 - name: Load required kernel modules
   community.general.modprobe:
     name: "{{ item }}"
     state: present
-    persistent: present  # Note: 'present' is still valid in community.general 11.x
+    persistent: present # Note: 'present' is still valid in community.general 11.x
   loop:
     - overlay
     - br_netfilter
@@ -188,6 +171,25 @@
     owner: root
     group: root
     mode: "0644"
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                Configure System Parameters                                * #
+# * ---------------------------------------------------------------------------------------- * #
+# Note: br_netfilter module must be loaded before setting bridge-nf parameters
+
+- name: Configure kernel parameters for Docker
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/99-docker.conf
+    reload: true
+  loop:
+    - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
+    - { name: "net.ipv4.ip_forward", value: "1" }
+    - { name: "net.ipv6.conf.all.forwarding", value: "0" } # IPv6 disabled per security model
+  notify: Restart docker
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                Security Hardening for userns-remap                        * #

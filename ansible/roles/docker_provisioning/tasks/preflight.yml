@@ -8,6 +8,33 @@
 # the system is ready for Docker installation with our security model.
 
 # * ---------------------------------------------------------------------------------------- * #
+# ?                                    Gather Required Facts                                  * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Gather minimal facts for Docker provisioning
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "!min"
+      - distribution
+      - os_family
+      - architecture
+      - date_time
+  when: ansible_os_family is not defined
+
+# * ---------------------------------------------------------------------------------------- * #
+# ?                                    Ensure Required Facts Available                        * #
+# * ---------------------------------------------------------------------------------------- * #
+
+- name: Ensure date_time facts are available for backup operations
+  ansible.builtin.setup:
+    gather_subset:
+      - "!all"
+      - "!min"
+      - date_time
+  when: ansible_date_time is not defined
+
+# * ---------------------------------------------------------------------------------------- * #
 # ?                                    Ansible Version Check                                  * #
 # * ---------------------------------------------------------------------------------------- * #
 

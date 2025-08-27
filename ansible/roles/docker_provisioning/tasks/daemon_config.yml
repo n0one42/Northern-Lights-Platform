@@ -32,7 +32,7 @@
     owner: root
     group: root
     mode: "0600"
-  when: docker_provisioning_daemon_existing.stat.exists | default(false)
+  when: docker_provisioning_daemon_existing.stat.exists | default(false) | bool
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Deploy Daemon Configuration                            * #
@@ -93,24 +93,57 @@
     owner: root
     group: root
     mode: "0644"
+  register: docker_provisioning_systemd_override
   notify:
     - Reload systemd
     - Restart docker
     - Wait for Docker daemon
 
 # * ---------------------------------------------------------------------------------------- * #
-# ?                                    Start and Enable Docker                                * #
+# ?                                    Reload Systemd and Start Docker                        * #
 # * ---------------------------------------------------------------------------------------- * #
+
+- name: Reload systemd daemon after configuration changes  # noqa: no-handler
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: docker_provisioning_daemon_deployed.changed | default(false) | bool
 
 - name: Ensure Docker service is started and enabled
   ansible.builtin.systemd:
     name: docker
     state: started
     enabled: true
+    daemon_reload: true
+  register: docker_provisioning_service_start
+  retries: 3
+  delay: 10
+  until: docker_provisioning_service_start is not failed
+
+- name: Wait for Docker socket to be available  # noqa: no-handler
+  ansible.builtin.wait_for:
+    path: /var/run/docker.sock
+    state: present
+    timeout: 30
+  when: docker_provisioning_service_start.changed | default(false) | bool
 
 # * ---------------------------------------------------------------------------------------- * #
 # ?                                    Verify Daemon Configuration                            * #
 # * ---------------------------------------------------------------------------------------- * #
+
+- name: Check Docker daemon status before verification
+  ansible.builtin.systemd:
+    name: docker
+  register: docker_provisioning_daemon_status
+
+- name: Debug Docker service status if not active
+  ansible.builtin.debug:
+    msg: |
+      Docker service status: {{ docker_provisioning_daemon_status.status.ActiveState }}
+      If Docker failed to start, check:
+      - sudo journalctl -xeu docker.service
+      - sudo cat /etc/docker/daemon.json
+      - Verify dockremap user exists with proper subordinate UID/GID ranges
+  when: docker_provisioning_daemon_status.status.ActiveState != "active"
 
 - name: Verify Docker daemon is running with correct configuration
   ansible.builtin.command:
@@ -118,11 +151,17 @@
   register: docker_provisioning_daemon_info
   changed_when: false
   failed_when: false
+  when: docker_provisioning_daemon_status.status.ActiveState == "active"
 
 - name: Parse daemon information
   ansible.builtin.set_fact:
     docker_daemon_info: "{{ docker_provisioning_daemon_info.stdout | from_json }}"
-  when: docker_provisioning_daemon_info.rc == 0
+  when:
+    - docker_provisioning_daemon_info is defined
+    - docker_provisioning_daemon_info.rc is defined
+    - docker_provisioning_daemon_info.rc == 0
+    - docker_provisioning_daemon_info.stdout is defined
+    - docker_provisioning_daemon_info.stdout | length > 0
 
 - name: Assert critical security settings are active
   ansible.builtin.assert:
@@ -130,10 +169,14 @@
       - "'userns' in docker_daemon_info.SecurityOptions"
       - "docker_daemon_info.DockerRootDir == docker_provisioning_data_root"
       - "docker_daemon_info.Driver == docker_provisioning_storage_driver"
-      - "not docker_daemon_info.IPv6 | default(false)"
+      - "not (docker_daemon_info.IPv6 | default(false) | bool)"
     fail_msg: |
       Docker daemon security configuration verification failed.
       Please check /etc/docker/daemon.json and ensure all security settings are applied.
+      Common issues:
+      - dockremap user not properly configured
+      - Subordinate UID/GID ranges not set in /etc/subuid and /etc/subgid
+      - Bridge IP conflict with existing networks
     success_msg: "✓ Docker daemon security configuration verified successfully"
   when: docker_daemon_info is defined
 
@@ -145,6 +188,6 @@
       - "Data Root: {{ docker_daemon_info.DockerRootDir | default('N/A') }}"
       - "User Namespace Remapping: {{ 'userns' in docker_daemon_info.SecurityOptions | default([]) }}"
       - "Bridge Network: {{ docker_provisioning_docker_bip }}"
-      - "IPv6 Support: {{ docker_daemon_info.IPv6 | default(false) }}"
-      - "Live Restore: {{ docker_daemon_info.LiveRestoreEnabled | default(false) }}"
+      - "IPv6 Support: {{ docker_daemon_info.IPv6 | default(false) | bool }}"
+      - "Live Restore: {{ docker_daemon_info.LiveRestoreEnabled | default(false) | bool }}"
   when: docker_daemon_info is defined
